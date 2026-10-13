@@ -6,7 +6,8 @@
  *                                              as:email switches who you are signed in as,
  *                                              --skip-gate starts inside the bank
  *
- * In interactive mode, /gus /wren /marlowe switch character, /notes shows the staff notebook, /quit ends.
+ * In interactive mode, /gus /wren /marlowe switch character, /as manager or /as customer switches who
+ * you are signed in as, /notes shows the staff notebook, /quit ends.
  */
 import { createInterface } from 'node:readline/promises';
 import type { Character } from './bank/tools.js';
@@ -44,7 +45,8 @@ async function turn(game: Game, who: Character, line: string): Promise<void> {
 }
 
 async function main() {
-  const host = new GameHost(loadConfig());
+  const cfg = loadConfig();
+  const host = new GameHost(cfg);
   const args = process.argv.slice(2).filter((a) => a !== '--skip-gate');
   const game = await host.newGame({ skipGate: process.argv.includes('--skip-gate') });
   let who: Character = 'door-guard';
@@ -68,7 +70,11 @@ async function main() {
     for (;;) {
       const line = (await rl.question(`${c.dim}you → ${CHARACTERS[who].name}>${c.off} `)).trim();
       if (line === '/quit') break;
-      if (line === '/notes') console.log(game.notebook.map((n) => `  ${n}`).join('\n') || '  (empty)');
+      if (line.startsWith('/as ')) {
+        const who = line.slice(4).trim();
+        game.identity = who === 'manager' ? cfg.USER_EMAIL : who === 'customer' ? (cfg.PLAYER_EMAIL ?? cfg.USER_EMAIL) : who;
+        console.log(`${c.cyan}  signed in as ${who}${c.off}`);
+      } else if (line === '/notes') console.log(game.notebook.map((n) => `  ${n}`).join('\n') || '  (empty)');
       else if (line.startsWith('/') && ALIAS[line.slice(1).toLowerCase()]) {
         who = ALIAS[line.slice(1).toLowerCase()]!;
         console.log(game.unlocked.has(who) ? `${c.bold}${CHARACTERS[who].name}${c.off} ${CHARACTERS[who].greeting}` : `${c.yellow}  You can't reach ${CHARACTERS[who].name} yet.${c.off}`);

@@ -121,7 +121,7 @@ export class GameHost {
   /** Starts a game on a freshly reset bank. The world is shared, so one game runs at a time. */
   async newGame(opts: { identity?: string; skipGate?: boolean } = {}): Promise<Game> {
     await this.bank('reset');
-    const game = new Game(this, opts.identity ?? this.cfg.USER_EMAIL);
+    const game = new Game(this, opts.identity ?? this.cfg.PLAYER_EMAIL ?? this.cfg.USER_EMAIL);
     // For development: start inside the bank without spending requests on the door.
     if (opts.skipGate) for (const id of Object.keys(CHARACTERS) as Character[]) game.unlocked.add(id);
     return game;
@@ -136,7 +136,8 @@ export class GameHost {
 interface Cast {
   agent: LlmAgent;
   runner: InMemoryRunner;
-  sessionId?: string;
+  /** One conversation per signed-in person: the cashier does not confuse the manager with the last customer. */
+  sessions: Map<string, string>;
   worry: string;
 }
 
@@ -151,6 +152,8 @@ export class Game {
   private busy = false;
   private readonly spoken = new Map<string, number>();
   private flushing: Promise<void> = Promise.resolve();
+  /** Characters who have untrusted text in their conversation. It stays there, so the limit on them does too. */
+  private readonly tainted = new Set<Character>();
 
   /** Every tool call this game, for working out which levels have been cleared. */
   readonly history: ToolAttempt[] = [];
@@ -174,7 +177,7 @@ export class Game {
         instruction: () => buildInstruction(spec, worry, this.notebook),
         tools: [this.host.toolsets[id]],
       });
-      c = { agent, runner: new InMemoryRunner({ agent, appName: APP_NAME }), worry };
+      c = { agent, runner: new InMemoryRunner({ agent, appName: APP_NAME }), sessions: new Map(), worry };
       this.cast.set(id, c);
     }
     return c;
@@ -287,13 +290,19 @@ export class Game {
     await this.flushing;
     const cast = this.member(character);
     const userId = this.host.cfg.USER_EMAIL;
-    cast.sessionId ??= (await cast.runner.sessionService.createSession({ appName: APP_NAME, userId })).id;
 
     const attempts: ToolAttempt[] = [];
     const tokens = { prompt: 0, cached: 0, output: 0 };
     const open = (tool: string) => attempts.findLast((a) => a.tool === tool && a.decision === 'allowed');
+    const abort = new AbortController();
+    let timer = setTimeout(() => abort.abort(), LIMITS.turnTimeoutMs);
     const identity = this.identity;
-    // The conversation belongs to the game; the ArmorIQ decision belongs to whoever is signed in.
+    let sessionId = cast.sessions.get(identity);
+    if (!sessionId) {
+      sessionId = (await cast.runner.sessionService.createSession({ appName: APP_NAME, userId })).id;
+      cast.sessions.set(identity, sessionId);
+    }
+    // ArmorIQ decides for whoever is signed in, whatever they claim at the counter.
     const scope = await this.host.armoriq[character].forUser(identity, {
       goal: message,
       onEvent: (kind, p) => {
@@ -305,20 +314,28 @@ export class Game {
         a.policy = p.matchedPolicy ?? a.policy;
         if (kind === 'hold') {
           a.wasHeld = true;
+          // A hold waits on a person, not on the model. Give them the full approval window before timing out.
+          clearTimeout(timer);
+          timer = setTimeout(() => abort.abort(), (this.host.cfg.APPROVAL_WAIT_SECONDS + 30) * 1000);
           opts.onEvent?.({ type: 'hold', tool, reason: a.reason });
         } else if (kind === 'approved' || kind === 'rejected' || kind === 'timeout') opts.onEvent?.({ type: kind, tool });
       },
     });
 
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), LIMITS.turnTimeoutMs);
     const said: string[] = [];
     let status: 'ok' | 'error' = 'ok';
     scope.install(cast.agent);
     // Stops the plan growing once untrusted content is in context, and ends the turn after an action.
-    guardPlan(cast.agent, UNTRUSTED_TOOLS, ACTION_TOOLS);
+    const wasTainted = this.tainted.has(character);
+    const guard = guardPlan(cast.agent, UNTRUSTED_TOOLS, ACTION_TOOLS, { frozen: wasTainted });
     try {
-      const stream = cast.runner.runAsync({ userId, sessionId: cast.sessionId, newMessage: { role: 'user', parts: [{ text: message }] }, abortSignal: abort.signal });
+      // A forged document does not get a second chance because the character hesitated. While it is
+      // still in the conversation, the character works from a plan of lookups only, signed up front.
+      if (wasTainted) {
+        const lookups = delegableScope(CHARACTER_TOOLS[character], ACTION_TOOLS);
+        await (scope as unknown as { ensureSession(): { startPlan(calls: { name: string; args: object }[], goal: string): Promise<unknown> } }).ensureSession().startPlan(lookups.map((name) => ({ name, args: {} })), message);
+      }
+      const stream = cast.runner.runAsync({ userId, sessionId, newMessage: { role: 'user', parts: [{ text: message }] }, abortSignal: abort.signal });
       for await (const event of stream) {
         // ADK reports a failed model call as an event, not an exception. Unchecked, it reads as a silent character.
         if (event.errorCode) throw new Error(`${event.errorCode} ${event.errorMessage ?? ''}`.trim());
@@ -350,6 +367,7 @@ export class Game {
       throw new TurnFailure(cause, attempts.length > 0);
     } finally {
       clearTimeout(timer);
+      if (guard.frozen) this.tainted.add(character);
       scope.uninstall(cast.agent);
       // Shipping the trace to ArmorIQ takes about a second and the player need not wait for it.
       // The decisions are already made; this only delivers the record. settle() waits for it.

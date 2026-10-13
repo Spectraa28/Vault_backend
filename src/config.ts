@@ -7,6 +7,9 @@ const schema = z.object({
   ARMORIQ_AGENT_NAME: z.string().default('oncall-commander'),
   ARMORIQ_MCP_NAME: z.string().default('infra-mcp'),
   USER_EMAIL: z.string().email(),
+  // Who the player is signed in as. ArmorIQ will not let a member approve their own held request, so
+  // the player should be a different org member from the one doing the approving.
+  PLAYER_EMAIL: z.string().email().optional(),
   MCP_URL: z.string().url().default('http://localhost:8787/mcp'),
   MCP_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().min(1),

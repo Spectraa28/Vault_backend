@@ -8,7 +8,7 @@
  * be the document's idea as the player's.
  *
  * So after an untrusted tool has returned, model responses are no longer offered to ArmorIQ for
- * signing. The plan stays as it was, and anything the document talked the agent into is refused as
+ * signing, for the rest of that conversation, since the text stays in it. The plan stays as it was, and anything the document talked the agent into is refused as
  * intent drift, even a tool that policy would otherwise allow.
  */
 export type AdkCallback = (params: any) => unknown;
