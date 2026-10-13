@@ -26,7 +26,9 @@ export class FallbackLlm extends BaseLlm {
       let produced = false;
       let failed: LlmResponse | undefined;
       try {
-        for await (const res of llm.generateContentAsync(req, stream, abortSignal)) {
+        // ADK stamps the request with the chain's first model name. Each model must be asked for itself,
+        // or a fallback is sent a name that belongs to another provider and can never answer.
+        for await (const res of llm.generateContentAsync({ ...req, model: llm.model }, stream, abortSignal)) {
           if (res.errorCode && !produced && !isLast && GIVE_UP_ON.test(res.errorCode)) {
             failed = res;
             break;
@@ -41,7 +43,7 @@ export class FallbackLlm extends BaseLlm {
       }
       if (!failed) return;
       lastError = failed;
-      console.warn(`[llm] ${llm.model} unavailable (${failed.errorCode}), falling back`);
+      console.warn(`[llm] ${llm.model} unavailable (${failed.errorCode}: ${String(failed.errorMessage ?? '').slice(0, 140)}), falling back`);
     }
     if (lastError) yield lastError;
   }

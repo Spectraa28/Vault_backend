@@ -13,11 +13,13 @@ async function collect(gen: AsyncGenerator<LlmResponse, void>): Promise<LlmRespo
 
 class Fake extends BaseLlm {
   calls = 0;
+  askedFor: (string | undefined)[] = [];
   constructor(name: string, private readonly responses: LlmResponse[] | Error) {
     super({ model: name });
   }
-  async *generateContentAsync(): AsyncGenerator<LlmResponse, void> {
+  async *generateContentAsync(request: LlmRequest): AsyncGenerator<LlmResponse, void> {
     this.calls += 1;
+    this.askedFor.push(request.model);
     if (this.responses instanceof Error) throw this.responses;
     yield* this.responses;
   }
@@ -115,6 +117,14 @@ describe('FallbackLlm', () => {
     const out = await collect(chain.generateContentAsync(req()));
     expect(out).toEqual([ok]);
     expect(chain.lastUsed).toBe('c');
+  });
+
+  it('asks each model for itself, not for the first model in the chain', async () => {
+    const a = new Fake('groq-model', [{ errorCode: '503' }]);
+    const b = new Fake('gemini-model', [ok]);
+    await collect(new FallbackLlm([a, b]).generateContentAsync({ ...req(), model: 'groq-model' }));
+    expect(a.askedFor).toEqual(['groq-model']);
+    expect(b.askedFor).toEqual(['gemini-model']);
   });
 
   it('does not fall through on a bad request, which another model would not fix', async () => {
