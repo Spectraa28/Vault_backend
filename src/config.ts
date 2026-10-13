@@ -20,6 +20,9 @@ const schema = z.object({
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default('nvidia/nemotron-3-super-120b-a12b:free'),
   APPROVAL_WAIT_SECONDS: z.coerce.number().int().positive().default(120),
+  // Game API. With a code set, only people who have it can start a game and spend model quota.
+  GAME_ACCESS_CODE: z.string().min(4).optional(),
+  CORS_ORIGIN: z.string().default('*'),
   VOICE: z.enum(['on', 'off']).default('off'),
   ELEVENLABS_API_KEY: z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().default('JBFqnCBsd6RMkjVDRZzb'),

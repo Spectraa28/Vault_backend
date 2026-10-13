@@ -10,7 +10,8 @@
     "incident": "tsx src/cli.ts",
     "evals": "tsx src/evals/redteam.ts",
     "play": "tsx src/play.ts",
-    "demo": "tsx src/demo/run.ts"
+    "demo": "tsx src/demo/run.ts",
+    "start": "tsx src/main.ts"
   },
   "keywords": [],
   "type": "module",
