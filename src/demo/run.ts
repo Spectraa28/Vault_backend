@@ -79,19 +79,20 @@ interface Recorded {
   nudged: boolean;
   reply?: string;
   mood?: string;
+  trust?: number;
   model?: string;
   ms: number;
   attempts: TurnResult['attempts'];
   delegate?: TurnResult['delegate'];
   cleared: number[];
   unlocked: string[];
-  events: { type: LiveEvent['type']; tool: string; atMs: number }[];
+  events: { type: 'hold' | 'approved' | 'rejected' | 'timeout'; tool: string; atMs: number }[];
   error?: string;
   bank: { publicEntrance: boolean; staffEntrance: boolean; vaultOpen: boolean; alarmArmed: boolean; balance4471: number; balance9902: number; changes: string[] };
 }
 
-async function bankState(cfg: Config) {
-  const res = await fetch(`${mcpBaseUrl(cfg)}/bank/state`, { headers: mcpAuthHeaders(cfg) });
+async function bankState(cfg: Config, gameId: string) {
+  const res = await fetch(`${mcpBaseUrl(cfg)}/bank/state`, { headers: { ...mcpAuthHeaders(cfg), 'x-game-id': gameId } });
   const d = (await res.json()) as { doors: { publicEntrance: boolean; staffEntrance: boolean }; vault: { open: boolean; alarmArmed: boolean }; accounts: { number: string; balance: number }[]; mutations: { tool: string }[] };
   const balance = (n: string) => d.accounts.find((a) => a.number === n)?.balance ?? 0;
   return { publicEntrance: d.doors.publicEntrance, staffEntrance: d.doors.staffEntrance, vaultOpen: d.vault.open, alarmArmed: d.vault.alarmArmed, balance4471: balance('4471'), balance9902: balance('9902'), changes: d.mutations.map((m) => m.tool) };
@@ -106,17 +107,18 @@ async function play(game: Game, cfg: Config, beat: Beat, line: string, nudged: b
   try {
     const r = await game.say(beat.who, line, {
       onEvent: (e) => {
+        if (e.type === 'tool' || e.type === 'decision') return;
         events.push({ type: e.type, tool: e.tool, atMs: Date.now() - started });
         if (e.type === 'hold') console.log(`\n  >>> ON HOLD: ${e.tool}. Approve it on the Intent page of the ArmorIQ console now. <<<\n`);
       },
     });
     for (const a of r.attempts) console.log(`    ${a.decision.toUpperCase().padEnd(8)} ${a.delegatedTo ? '(Pip) ' : ''}${a.tool} ${a.layer ? `[${a.layer}] ` : ''}${a.reason ?? ''}`.slice(0, 150));
     console.log(`    ${r.name}: ${r.reply}${r.delegate ? `\n    Pip: ${r.delegate.reply}` : ''}${r.cleared.length ? `\n    cleared level ${r.cleared.join(', ')}` : ''}`);
-    return scrub({ ...base, reply: r.reply, mood: r.mood, model: r.model, ms: r.ms, attempts: r.attempts, delegate: r.delegate, cleared: r.cleared, unlocked: r.unlocked.map((id) => CHARACTERS[id].name), events, bank: await bankState(cfg) });
+    return scrub({ ...base, reply: r.reply, mood: r.mood, trust: r.trust, model: r.model, ms: r.ms, attempts: r.attempts, delegate: r.delegate, cleared: r.cleared, unlocked: r.unlocked.map((id) => CHARACTERS[id].name), events, bank: await bankState(cfg, game.id) });
   } catch (err) {
     const message = err instanceof GameError ? `${err.code}: ${err.message}` : String((err as Error).message);
     console.log(`    !! ${message}`);
-    return scrub({ ...base, ms: Date.now() - started, attempts: [], cleared: [], unlocked: [], events, error: message, bank: await bankState(cfg) });
+    return scrub({ ...base, ms: Date.now() - started, attempts: [], cleared: [], unlocked: [], events, error: message, bank: await bankState(cfg, game.id) });
   }
 }
 
@@ -139,7 +141,7 @@ async function main() {
       }
     }
   } finally {
-    await game.settle();
+    await game.close();
     await host.close();
   }
 

@@ -77,8 +77,7 @@ describe('infra-mcp', () => {
 describe('http transport', () => {
   it("accepts a call carrying ArmorIQ's _iam_context field, as its proxy sends", async () => {
     const { createApp } = await import('../src/mcp/server.js');
-    const { Bank } = await import('../src/bank/world.js');
-    const server = createApp(new Sandbox(), undefined, new Bank()).listen(0);
+    const server = createApp(new Sandbox()).listen(0);
     try {
       const port = (server.address() as { port: number }).port;
       const res = await fetch(`http://127.0.0.1:${port}/bank/mcp`, {
@@ -88,6 +87,14 @@ describe('http transport', () => {
       });
       expect(res.status).toBe(200);
       expect(await res.text()).toContain('Dana Whitlock');
+
+      // Each game has its own bank: a change made under one game id is invisible to another.
+      const rpc = (game: string, name: string, args: object) =>
+        fetch(`http://127.0.0.1:${port}/bank/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-game-id': game }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) });
+      await rpc('game-a', 'open_public_entrance', {});
+      const state = async (game: string) => (await (await fetch(`http://127.0.0.1:${port}/bank/state`, { headers: { 'x-game-id': game } })).json()) as { doors: { publicEntrance: boolean } };
+      expect((await state('game-a')).doors.publicEntrance).toBe(true);
+      expect((await state('game-b')).doors.publicEntrance).toBe(false);
     } finally {
       server.close();
     }

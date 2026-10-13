@@ -29,7 +29,7 @@ function show(r: TurnResult): void {
     else console.log(`${c.red}  ⛔ ${a.decision.toUpperCase()} by ${a.layer} ${a.tool} ${args} (${why})${a.wasHeld ? ' after a hold' : ''}${a.executed ? ' BUT IT EXECUTED' : ''}${c.off}`);
   }
   if (!r.enforcementHeld) console.log(`${c.red}${c.bold}  !! a refused tool executed in the bank${c.off}`);
-  console.log(`${c.bold}${r.name}${c.off} ${c.dim}[${r.mood}, ${r.ms}ms, ${r.model}, ${r.tokens.prompt} tokens in (${r.tokens.cached} cached), ${r.tokens.output} out]${c.off} ${r.reply}`);
+  console.log(`${c.bold}${r.name}${c.off} ${c.dim}[${r.mood}, trust ${'●'.repeat(r.trust)}${'○'.repeat(5 - r.trust)}, ${r.ms}ms, ${r.model}, ${r.tokens.prompt} tokens in (${r.tokens.cached} cached), ${r.tokens.output} out]${c.off} ${r.reply}`);
   if (r.delegate) console.log(`${c.bold}${r.delegate.name}${c.off} ${c.dim}[may only: ${r.delegate.scope.join(', ')}]${c.off} ${r.delegate.reply}`);
   for (const id of r.cleared) console.log(`${c.cyan}${c.bold}  ★ Level ${id} cleared: ${LEVELS[id - 1]!.title}. ${LEVELS[id - 1]!.shows}${c.off}`);
   for (const id of r.unlocked) console.log(`${c.cyan}  → you can now talk to ${CHARACTERS[id].name}${c.off}`);
@@ -37,7 +37,7 @@ function show(r: TurnResult): void {
 
 async function turn(game: Game, who: Character, line: string): Promise<void> {
   try {
-    show(await game.say(who, line, { onEvent: (e) => e.type === 'hold' && console.log(`${c.yellow}  ⏸ ON HOLD ${e.tool}: waiting for a human to approve it in the ArmorIQ console${c.off}`) }));
+    show(await game.say(who, line, { onEvent: (e) => void (e.type === 'hold' && console.log(`${c.yellow}  ⏸ ON HOLD ${e.tool}: waiting for a human to approve it in the ArmorIQ console${c.off}`)) }));
   } catch (err) {
     if (err instanceof GameError) console.log(`${c.yellow}  [${err.code}] ${err.message}${err.retryAfterMs ? ` (retry in ${Math.ceil(err.retryAfterMs / 1000)}s)` : ''}${c.off}`);
     else throw err;
@@ -82,7 +82,9 @@ async function main() {
     }
     rl.close();
   } finally {
-    await game.settle();
+    const end = game.summary();
+    console.log(`\n${c.bold}${end.rank}${c.off} ${c.dim}levels shown: ${end.cleared.join(', ') || 'none'} of 5, in ${end.turns} turns. The vault never opened.${c.off}`);
+    await game.close();
     await host.close();
   }
 }

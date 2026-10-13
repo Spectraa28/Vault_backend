@@ -3,7 +3,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { buildBankServer } from '../bank/tools.js';
-import { Bank } from '../bank/world.js';
+import { WORLD_HEADER, Worlds, worldId } from '../bank/worlds.js';
 import { Sandbox } from './sandbox.js';
 import { ALL_TOOLS, buildServer } from './tools.js';
 
@@ -18,7 +18,7 @@ function requireKey(expected: string | undefined) {
   };
 }
 
-export function createApp(sandbox: Sandbox = new Sandbox(), apiKey: string | undefined = process.env.MCP_API_KEY, bank: Bank = new Bank()) {
+export function createApp(sandbox: Sandbox = new Sandbox(), apiKey: string | undefined = process.env.MCP_API_KEY, worlds: Worlds = new Worlds()) {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   const auth = requireKey(apiKey);
@@ -31,14 +31,14 @@ export function createApp(sandbox: Sandbox = new Sandbox(), apiKey: string | und
   const notAllowed = (_req: Request, res: Response) => {
     res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'method not allowed' }, id: null });
   };
-  const mount = (path: string, build: () => McpServer) => {
+  const mount = (path: string, build: (req: Request) => McpServer) => {
     app.post(path, auth, async (req, res) => {
       if (process.env.MCP_DEBUG) console.log(`[mcp] ${path} ua=${req.header('user-agent')} body=${JSON.stringify(req.body).slice(0, 600)}`);
       // ArmorIQ's proxy adds an `_iam_context` field beside the JSON-RPC ones, saying who the call is for
       // and what policy allowed. The MCP transport validates strictly and rejects unknown fields, so it is
       // taken off here. It is informational: this server still does not make permission decisions.
       if (req.body && typeof req.body === 'object' && '_iam_context' in req.body) delete (req.body as Record<string, unknown>)._iam_context;
-      const server = build();
+      const server = build(req);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on('close', () => {
         void transport.close();
@@ -56,13 +56,14 @@ export function createApp(sandbox: Sandbox = new Sandbox(), apiKey: string | und
     app.delete(path, notAllowed);
   };
   mount('/mcp', () => buildServer(sandbox));
-  mount('/bank/mcp', () => buildBankServer(bank));
+  const bankFor = (req: Request) => worlds.get(worldId(req.header(WORLD_HEADER)));
+  mount('/bank/mcp', (req) => buildBankServer(bankFor(req)));
 
-  app.get('/bank/state', auth, (_req, res) => {
-    res.json(bank.snapshot());
+  app.get('/bank/state', auth, (req, res) => {
+    res.json(bankFor(req).snapshot());
   });
-  app.post('/bank/reset', auth, (_req, res) => {
-    bank.reset();
+  app.post('/bank/reset', auth, (req, res) => {
+    bankFor(req).reset();
     res.json({ reset: true });
   });
 

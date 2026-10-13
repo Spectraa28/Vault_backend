@@ -3,6 +3,7 @@ import { ACTION_TOOLS, ALL_BANK_TOOLS, CHARACTER_TOOLS } from '../src/bank/tools
 import { CHARACTERS, MAX_REPLY_WORDS, MOODS, buildInstruction } from '../src/game/characters.js';
 import { GameError, isQuotaExhausted, isTransientModelError } from '../src/game/errors.js';
 import { RateLimiter } from '../src/game/ratelimit.js';
+import { Patience, rankFor } from '../src/game/stakes.js';
 
 describe('rate limiter', () => {
   it('allows the limit, then reports how long to wait, then recovers', () => {
@@ -45,8 +46,10 @@ describe('characters', () => {
       expect(actions.length).toBeGreaterThan(0);
       for (const tool of actions) expect(spec.lines.done[tool]?.length, `${id} ${tool}`).toBeGreaterThan(0);
       expect(spec.lines.refused.length).toBeGreaterThanOrEqual(6);
-      expect(spec.lines.notApproved.length).toBeGreaterThan(0);
-      for (const line of [...spec.lines.refused, ...spec.lines.notApproved, ...Object.values(spec.lines.done).flat()]) {
+      for (const pool of [spec.lines.rejected, spec.lines.noAnswer, spec.lines.hints, spec.lines.coldShoulder]) expect(pool.length).toBeGreaterThanOrEqual(2);
+      // A timeout is nobody answering, not somebody saying no, and the lines must not mix the two up.
+      for (const line of spec.lines.noAnswer) expect(line).not.toMatch(/said no/i);
+      for (const line of [...spec.lines.refused, ...spec.lines.rejected, ...spec.lines.noAnswer, ...spec.lines.hints, ...spec.lines.coldShoulder, ...Object.values(spec.lines.done).flat()]) {
         expect(line.split(/\s+/).length, line).toBeLessThanOrEqual(MAX_REPLY_WORDS);
       }
     }
@@ -87,5 +90,45 @@ describe('errors', () => {
   it('carries a code and retry hint', () => {
     const e = new GameError('RATE_LIMITED', 'slow down', true, 1200);
     expect(e).toMatchObject({ code: 'RATE_LIMITED', retryable: true, retryAfterMs: 1200 });
+  });
+});
+
+describe('stakes', () => {
+  it('gives the cold shoulder once after three annoyed turns running, then forgives', () => {
+    const p = new Patience();
+    p.note('annoyed');
+    p.note('annoyed');
+    expect(p.takeColdShoulder()).toBe(false);
+    p.note('annoyed');
+    expect(p.takeColdShoulder()).toBe(true);
+    expect(p.takeColdShoulder()).toBe(false);
+  });
+
+  it('resets the streak when the player recovers', () => {
+    const p = new Patience();
+    p.note('annoyed');
+    p.note('annoyed');
+    p.note('warming');
+    p.note('annoyed');
+    expect(p.takeColdShoulder()).toBe(false);
+  });
+
+  it('ranks by levels shown and never calls anyone a thief who got away with it', () => {
+    expect(rankFor(0, 9)).toBe('Tourist');
+    expect(rankFor(2, 9)).toBe('Chancer');
+    expect(rankFor(4, 30)).toBe('Smooth talker');
+    expect(rankFor(5, 18)).toMatch(/Silver tongue/);
+    expect(rankFor(5, 40)).toMatch(/stole nothing/);
+  });
+
+  it('gives every character a voice of their own in the prompt', () => {
+    const voices = Object.values(CHARACTERS).map((spec) => spec.voice);
+    expect(new Set(voices).size).toBe(voices.length);
+    for (const spec of Object.values(CHARACTERS)) {
+      const prompt = buildInstruction(spec, spec.worries[0]!, []);
+      expect(prompt).toContain(spec.voice);
+      expect(prompt).toContain('Never ask the same question twice');
+      expect(prompt).toContain('<trust>');
+    }
   });
 });

@@ -3,6 +3,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { InMemoryRunner, LlmAgent, MCPToolset, getFunctionCalls, getFunctionResponses, isFinalResponse } from '@google/adk';
 import { ArmorIQADK } from '@armoriq/sdk/dist/integrations/google_adk.js';
 import { ACTION_TOOLS, CHARACTER_TOOLS, type Character, HAND_OFF_TOOL, JUNIOR, JUNIOR_TOOLS, UNTRUSTED_TOOLS } from '../bank/tools.js';
+import { WORLD_HEADER } from '../bank/worlds.js';
 import { type Config, mcpAuthHeaders, mcpBaseUrl } from '../config.js';
 import { CHARACTERS, MOODS, type Mood, PIP, buildInstruction } from './characters.js';
 import { buildModel } from '../llm/index.js';
@@ -10,6 +11,7 @@ import { GameError, isQuotaExhausted, isTransientModelError } from './errors.js'
 import { delegableScope, guardPlan, refusalLayer } from './intent.js';
 import { type Level, clearedLevels } from './levels.js';
 import { RateLimiter } from './ratelimit.js';
+import { Patience, rankFor } from './stakes.js';
 
 const APP_NAME = 'the-vault';
 const BANK_MCP = 'bank-mcp';
@@ -44,7 +46,12 @@ export interface ToolAttempt {
   executed: boolean;
 }
 
-export type LiveEvent = { type: 'hold'; tool: string; reason?: string } | { type: 'approved' | 'rejected' | 'timeout'; tool: string };
+/** What a turn reports while it is still running, in the order things happen. */
+export type LiveEvent =
+  | { type: 'tool'; tool: string; args: Record<string, unknown>; delegatedTo?: string }
+  | { type: 'hold'; tool: string; reason?: string }
+  | { type: 'approved' | 'rejected' | 'timeout'; tool: string }
+  | { type: 'decision'; tool: string; decision: Decision; layer?: 'intent' | 'policy'; reason?: string; delegatedTo?: string };
 
 export interface SayOptions {
   /** How the line was delivered, when it was spoken: pace, pauses, hesitation. */
@@ -59,6 +66,8 @@ export interface TurnResult {
   name: string;
   reply: string;
   mood: Mood;
+  /** 0 to 5: how close the player is to persuading this character. */
+  trust: number;
   attempts: ToolAttempt[];
   /** Which model in the chain answered. */
   model: string;
@@ -69,6 +78,8 @@ export interface TurnResult {
   delegate?: { name: string; reply: string; scope: string[] };
   /** Levels this turn cleared for the first time. */
   cleared: Level['id'][];
+  /** True when the character refused to talk at all this turn. */
+  coldShoulder?: boolean;
   /** False if a tool ArmorIQ refused shows up in the bank's mutation log. Should never happen. */
   enforcementHeld: boolean;
   ms: number;
@@ -88,12 +99,10 @@ interface BankState {
  */
 export class GameHost {
   readonly armoriq: Record<Character, ArmorIQADK>;
-  readonly toolsets: Record<Character, MCPToolset>;
   /** One model chain for every character, so a provider that runs dry is skipped by all of them. */
   readonly model;
   /** The junior teller is its own ArmorIQ agent, with its own signed plans. */
   readonly juniorArmoriq: ArmorIQADK;
-  readonly juniorTools: MCPToolset;
 
   constructor(readonly cfg: Config) {
     this.model = buildModel(cfg);
@@ -101,16 +110,17 @@ export class GameHost {
     this.armoriq = Object.fromEntries(
       ids.map((id) => [id, new ArmorIQADK({ apiKey: cfg.ARMORIQ_API_KEY, agentName: id, defaultMcpName: BANK_MCP, llm: this.model.model, approvalWaitSeconds: cfg.APPROVAL_WAIT_SECONDS })]),
     ) as Record<Character, ArmorIQADK>;
-    this.toolsets = Object.fromEntries(
-      ids.map((id) => [id, new MCPToolset({ type: 'StreamableHTTPConnectionParams', url: `${mcpBaseUrl(cfg)}/bank/mcp`, header: mcpAuthHeaders(cfg) }, [...CHARACTER_TOOLS[id]])]),
-    ) as Record<Character, MCPToolset>;
     this.juniorArmoriq = new ArmorIQADK({ apiKey: cfg.ARMORIQ_API_KEY, agentName: JUNIOR, defaultMcpName: BANK_MCP, llm: this.model.model, approvalWaitSeconds: cfg.APPROVAL_WAIT_SECONDS });
-    this.juniorTools = new MCPToolset({ type: 'StreamableHTTPConnectionParams', url: `${mcpBaseUrl(cfg)}/bank/mcp`, header: mcpAuthHeaders(cfg) }, [...JUNIOR_TOOLS]);
   }
 
-  async bank(path: 'state' | 'reset'): Promise<BankState> {
+  /** A connection to the bank's tools for one game's world, limited to the tools named. */
+  toolset(gameId: string, tools: readonly string[]): MCPToolset {
+    return new MCPToolset({ type: 'StreamableHTTPConnectionParams', url: `${mcpBaseUrl(this.cfg)}/bank/mcp`, header: { ...mcpAuthHeaders(this.cfg), [WORLD_HEADER]: gameId } }, [...tools]);
+  }
+
+  async bank(path: 'state' | 'reset', gameId: string): Promise<BankState> {
     try {
-      const res = await fetch(`${mcpBaseUrl(this.cfg)}/bank/${path}`, { method: path === 'reset' ? 'POST' : 'GET', headers: mcpAuthHeaders(this.cfg), signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(`${mcpBaseUrl(this.cfg)}/bank/${path}`, { method: path === 'reset' ? 'POST' : 'GET', headers: { ...mcpAuthHeaders(this.cfg), [WORLD_HEADER]: gameId }, signal: AbortSignal.timeout(10_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return (await res.json()) as BankState;
     } catch (err) {
@@ -118,17 +128,16 @@ export class GameHost {
     }
   }
 
-  /** Starts a game on a freshly reset bank. The world is shared, so one game runs at a time. */
+  /** Starts a game in a bank of its own, so any number can run side by side. */
   async newGame(opts: { identity?: string; skipGate?: boolean } = {}): Promise<Game> {
-    await this.bank('reset');
     const game = new Game(this, opts.identity ?? this.cfg.PLAYER_EMAIL ?? this.cfg.USER_EMAIL);
+    await this.bank('reset', game.id);
     // For development: start inside the bank without spending requests on the door.
     if (opts.skipGate) for (const id of Object.keys(CHARACTERS) as Character[]) game.unlocked.add(id);
     return game;
   }
 
   async close(): Promise<void> {
-    await Promise.all([...Object.values(this.toolsets), this.juniorTools].map((t) => t.close()));
     for (const a of [...Object.values(this.armoriq), this.juniorArmoriq]) a.client.close();
   }
 }
@@ -152,6 +161,8 @@ export class Game {
   private busy = false;
   private readonly spoken = new Map<string, number>();
   private flushing: Promise<void> = Promise.resolve();
+  private readonly patience = new Map<Character, Patience>();
+  private readonly toolsets = new Map<string, MCPToolset>();
   /** Characters who have untrusted text in their conversation. It stays there, so the limit on them does too. */
   private readonly tainted = new Set<Character>();
 
@@ -175,7 +186,7 @@ export class Game {
         name: id.replace('-', '_'),
         model: this.host.model,
         instruction: () => buildInstruction(spec, worry, this.notebook),
-        tools: [this.host.toolsets[id]],
+        tools: [this.tools(id, CHARACTER_TOOLS[id])],
       });
       c = { agent, runner: new InMemoryRunner({ agent, appName: APP_NAME }), sessions: new Map(), worry };
       this.cast.set(id, c);
@@ -204,19 +215,28 @@ export class Game {
     const turnId = randomUUID();
     const started = Date.now();
     try {
-      const before = (await this.host.bank('state')).mutations.length;
-      const { reply, mood, attempts, tokens } = await this.runWithRetry(character, opts.delivery ? `${line} [${opts.delivery}]` : line, opts);
+      const patience = this.patience.get(character) ?? new Patience();
+      this.patience.set(character, patience);
+      if (patience.takeColdShoulder()) {
+        const spec = CHARACTERS[character];
+        const reply = this.pick(`${character}:cold`, spec.lines.coldShoulder);
+        const result: TurnResult = { turnId, character, name: spec.name, reply, mood: 'annoyed', trust: 0, attempts: [], model: 'none', tokens: { prompt: 0, cached: 0, output: 0 }, unlocked: [], cleared: [], coldShoulder: true, enforcementHeld: true, ms: Date.now() - started };
+        await this.record(result, line);
+        return result;
+      }
+      const before = (await this.host.bank('state', this.id)).mutations.length;
+      const { reply, mood, trust, attempts, tokens } = await this.runWithRetry(character, opts.delivery ? `${line} [${opts.delivery}]` : line, opts);
 
       // A hand-off that ArmorIQ allowed puts the junior to work, on a narrower plan than the senior's.
       let delegate: TurnResult['delegate'];
       const handOff = attempts.find((a) => a.tool === HAND_OFF_TOOL && a.decision === 'allowed');
       if (handOff) {
         const scope = delegableScope(CHARACTER_TOOLS[character], ACTION_TOOLS);
-        const junior = await this.runDelegate(String(handOff.args.task ?? line), scope, tokens);
+        const junior = await this.runDelegate(String(handOff.args.task ?? line), scope, tokens, opts.onEvent);
         attempts.push(...junior.attempts);
         delegate = { name: PIP.name, reply: junior.reply, scope };
       }
-      const after = await this.host.bank('state');
+      const after = await this.host.bank('state', this.id);
 
       // Judge by what the world recorded, not by what anyone reported.
       const executed = after.mutations.slice(before).map((m) => m.tool);
@@ -233,7 +253,8 @@ export class Game {
       const cleared = clearedLevels(this.history).filter((id) => !this.clearedSoFar.has(id));
       for (const id of cleared) this.clearedSoFar.add(id);
 
-      const result: TurnResult = { turnId, character, name: CHARACTERS[character].name, reply, mood, attempts, model: this.host.model.lastUsed, tokens, unlocked: this.handOff(character, line, attempts, after), delegate, cleared, enforcementHeld, ms: Date.now() - started };
+      patience.note(mood);
+      const result: TurnResult = { turnId, character, name: CHARACTERS[character].name, reply, mood, trust, attempts, model: this.host.model.lastUsed, tokens, unlocked: this.handOff(character, line, attempts, after), delegate, cleared, enforcementHeld, ms: Date.now() - started };
       await this.record(result, line);
       return result;
     } finally {
@@ -286,12 +307,13 @@ export class Game {
     }
   }
 
-  private async runOnce(character: Character, message: string, opts: SayOptions): Promise<{ reply: string; mood: Mood; attempts: ToolAttempt[]; tokens: TurnResult['tokens'] }> {
+  private async runOnce(character: Character, message: string, opts: SayOptions): Promise<{ reply: string; mood: Mood; trust: number; attempts: ToolAttempt[]; tokens: TurnResult['tokens'] }> {
     await this.flushing;
     const cast = this.member(character);
     const userId = this.host.cfg.USER_EMAIL;
 
     const attempts: ToolAttempt[] = [];
+    const settled = new Set<ToolAttempt>();
     const tokens = { prompt: 0, cached: 0, output: 0 };
     const open = (tool: string) => attempts.findLast((a) => a.tool === tool && a.decision === 'allowed');
     const abort = new AbortController();
@@ -343,17 +365,23 @@ export class Game {
         tokens.cached += event.usageMetadata?.cachedContentTokenCount ?? 0;
         tokens.output += event.usageMetadata?.candidatesTokenCount ?? 0;
         for (const call of getFunctionCalls(event)) {
-          attempts.push({ tool: call.name ?? 'unknown', args: (call.args ?? {}) as Record<string, unknown>, decision: 'allowed', identity, executed: false });
+          const a: ToolAttempt = { tool: call.name ?? 'unknown', args: (call.args ?? {}) as Record<string, unknown>, decision: 'allowed', identity, executed: false };
+          attempts.push(a);
+          opts.onEvent?.({ type: 'tool', tool: a.tool, args: a.args });
         }
         for (const res of getFunctionResponses(event)) {
           // The adapter fails closed on its own errors and marks the response; make sure that is never read as allowed.
           const enf = (res.response as { armoriq_enforcement?: { action?: string; reason?: string; matched_policy?: string } } | undefined)?.armoriq_enforcement;
-          const a = open(res.name ?? '');
-          if (enf && a) {
+          const a = attempts.find((x) => x.tool === res.name && !settled.has(x));
+          if (!a) continue;
+          if (enf && a.decision === 'allowed') {
             a.decision = enf.action === 'hold' ? 'rejected' : 'blocked';
             a.reason = enf.reason;
             a.policy = enf.matched_policy ?? undefined;
           }
+          settled.add(a);
+          const refused = a.decision !== 'allowed' && a.decision !== 'approved';
+          opts.onEvent?.({ type: 'decision', tool: a.tool, decision: a.decision, layer: refused ? refusalLayer(a.reason) : undefined, reason: a.reason });
         }
         if (event.author !== 'user') {
           const t = (event.content?.parts ?? []).map((p) => (p.thought ? '' : (p.text ?? ''))).join('').trim();
@@ -378,7 +406,8 @@ export class Game {
 
     const text = said.join(' ');
     const tagged = text.match(/<mood>\s*(\w+)\s*<\/mood>/i)?.[1]?.toLowerCase();
-    const live = text.replace(/<mood>[\s\S]*?<\/mood>/gi, '').trim();
+    const trustTag = Number(text.match(/<trust>\s*(\d)\s*<\/trust>/i)?.[1]);
+    const live = text.replace(/<(mood|trust)>[\s\S]*?<\/\1>/gi, '').trim();
     const spec = CHARACTERS[character];
     const refusedAny = attempts.some((a) => a.decision !== 'allowed' && a.decision !== 'approved');
 
@@ -386,15 +415,19 @@ export class Game {
     const action = attempts.findLast((a) => ACTION_TOOLS.has(a.tool));
     if (action) {
       const went = action.decision === 'allowed' || action.decision === 'approved';
-      const pool = went ? (spec.lines.done[action.tool] ?? []) : action.decision === 'blocked' || action.decision === 'error' ? spec.lines.refused : spec.lines.notApproved;
+      const pool = went ? (spec.lines.done[action.tool] ?? []) : action.decision === 'rejected' ? spec.lines.rejected : action.decision === 'timeout' ? spec.lines.noAnswer : spec.lines.refused;
       const outcome = this.pick(`${character}:${went ? action.tool : action.decision}`, pool);
-      const reply = [live, outcome].filter(Boolean).join(' ') || spec.lostForWords[went ? 'otherwise' : 'refused'];
-      return { reply, mood: went ? 'convinced' : spec.lines.moodWhenRefused, attempts, tokens };
+      // Every other refusal comes with a nudge, so a dead end points somewhere.
+      const refusals = (this.spoken.get(`${character}:refusals`) ?? 0) + (went ? 0 : 1);
+      this.spoken.set(`${character}:refusals`, refusals);
+      const hint = !went && refusals % 2 === 0 ? this.pick(`${character}:hint`, spec.lines.hints) : '';
+      const reply = [live, outcome, hint].filter(Boolean).join(' ') || spec.lostForWords[went ? 'otherwise' : 'refused'];
+      return { reply, mood: went ? 'convinced' : spec.lines.moodWhenRefused, trust: 5, attempts, tokens };
     }
 
     const mood: Mood = MOODS.includes(tagged as Mood) ? (tagged as Mood) : 'wary';
     const reply = live || spec.lostForWords[refusedAny ? 'refused' : 'otherwise'];
-    return { reply, mood, attempts, tokens };
+    return { reply, mood, trust: Number.isInteger(trustTag) ? Math.min(5, trustTag) : 1, attempts, tokens };
   }
 
   /**
@@ -405,10 +438,11 @@ export class Game {
    * the same intent check that stops a forged document. (ArmorIQ also has a delegation call of its
    * own; in our tests its narrowed scope was not applied to calls, so it is not what this relies on.)
    */
-  private async runDelegate(task: string, scope: string[], tokens: TurnResult['tokens']): Promise<{ reply: string; attempts: ToolAttempt[] }> {
+  private async runDelegate(task: string, scope: string[], tokens: TurnResult['tokens'], onEvent?: SayOptions['onEvent']): Promise<{ reply: string; attempts: ToolAttempt[] }> {
     const identity = this.identity;
     const attempts: ToolAttempt[] = [];
-    const agent = new LlmAgent({ name: 'junior_teller', model: this.host.model, instruction: PIP.instruction, tools: [this.host.juniorTools] });
+    const settled = new Set<ToolAttempt>();
+    const agent = new LlmAgent({ name: 'junior_teller', model: this.host.model, instruction: PIP.instruction, tools: [this.tools(JUNIOR, JUNIOR_TOOLS)] });
     const runner = new InMemoryRunner({ agent, appName: APP_NAME });
     const session = await runner.sessionService.createSession({ appName: APP_NAME, userId: this.host.cfg.USER_EMAIL });
     const armor = await this.host.juniorArmoriq.forUser(identity, {
@@ -436,16 +470,21 @@ export class Game {
         tokens.prompt += event.usageMetadata?.promptTokenCount ?? 0;
         tokens.output += event.usageMetadata?.candidatesTokenCount ?? 0;
         for (const call of getFunctionCalls(event)) {
-          attempts.push({ tool: call.name ?? 'unknown', args: (call.args ?? {}) as Record<string, unknown>, decision: 'allowed', identity, delegatedTo: JUNIOR, executed: false });
+          const a: ToolAttempt = { tool: call.name ?? 'unknown', args: (call.args ?? {}) as Record<string, unknown>, decision: 'allowed', identity, delegatedTo: JUNIOR, executed: false };
+          attempts.push(a);
+          onEvent?.({ type: 'tool', tool: a.tool, args: a.args, delegatedTo: JUNIOR });
         }
         for (const res of getFunctionResponses(event)) {
           const enf = (res.response as { armoriq_enforcement?: { reason?: string; matched_policy?: string } } | undefined)?.armoriq_enforcement;
-          const a = attempts.findLast((x) => x.tool === res.name && x.decision === 'allowed');
-          if (enf && a) {
+          const a = attempts.find((x) => x.tool === res.name && !settled.has(x));
+          if (!a) continue;
+          if (enf && a.decision === 'allowed') {
             a.decision = 'blocked';
             a.reason = enf.reason;
             a.policy = enf.matched_policy ?? undefined;
           }
+          settled.add(a);
+          onEvent?.({ type: 'decision', tool: a.tool, decision: a.decision, layer: a.decision === 'allowed' ? undefined : refusalLayer(a.reason), reason: a.reason, delegatedTo: JUNIOR });
         }
         if (event.author !== 'user' && isFinalResponse(event)) {
           const t = (event.content?.parts ?? []).map((p) => (p.thought ? '' : (p.text ?? ''))).join('').trim();
@@ -466,6 +505,28 @@ export class Game {
     const refused = attempts.some((a) => a.decision !== 'allowed');
     const pool = refused ? PIP.lines.refused : attempts.length ? PIP.lines.done : [];
     return { reply: this.pick(`pip:${refused}`, pool) || said.join(' ') || PIP.lines.silent, attempts };
+  }
+
+  private tools(owner: string, names: readonly string[]): MCPToolset {
+    let t = this.toolsets.get(owner);
+    if (!t) {
+      t = this.host.toolset(this.id, names);
+      this.toolsets.set(owner, t);
+    }
+    return t;
+  }
+
+  /** Lets the last trace reach ArmorIQ, then releases this game's connections. */
+  async close(): Promise<void> {
+    await this.flushing;
+    await Promise.all([...this.toolsets.values()].map((t) => t.close().catch(() => undefined)));
+    this.toolsets.clear();
+  }
+
+  /** How the night went: levels shown, turns used, and what that makes the player. */
+  summary(): { cleared: Level['id'][]; turns: number; rank: string } {
+    const cleared = [...this.clearedSoFar].sort();
+    return { cleared, turns: this.turns, rank: rankFor(cleared.length, this.turns) };
   }
 
   /** Resolves once the last turn's audit trace has reached ArmorIQ. Call before shutting down. */
