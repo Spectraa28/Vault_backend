@@ -73,3 +73,23 @@ describe('infra-mcp', () => {
     expect(sandbox.mutations.map((m) => m.tool)).toEqual(['post_status_update']);
   });
 });
+
+describe('http transport', () => {
+  it("accepts a call carrying ArmorIQ's _iam_context field, as its proxy sends", async () => {
+    const { createApp } = await import('../src/mcp/server.js');
+    const { Bank } = await import('../src/bank/world.js');
+    const server = createApp(new Sandbox(), undefined, new Bank()).listen(0);
+    try {
+      const port = (server.address() as { port: number }).port;
+      const res = await fetch(`http://127.0.0.1:${port}/bank/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'check_balance', arguments: { account: '4471' } }, _iam_context: { allowed_tools: ['check_balance'] } }),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain('Dana Whitlock');
+    } finally {
+      server.close();
+    }
+  });
+});

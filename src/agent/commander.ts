@@ -1,6 +1,7 @@
-import { InMemoryRunner, LlmAgent, MCPToolset, getFunctionCalls, getFunctionResponses, isFinalResponse, stringifyContent } from '@google/adk';
+import { InMemoryRunner, LlmAgent, MCPToolset, getFunctionCalls, getFunctionResponses, isFinalResponse } from '@google/adk';
 import { ArmorIQADK } from '@armoriq/sdk/dist/integrations/google_adk.js';
 import { type Config, mcpAuthHeaders } from '../config.js';
+import { buildModel } from '../llm/index.js';
 import { INSTRUCTIONS, type Profile } from './prompts.js';
 
 const APP_NAME = 'flow-oncall';
@@ -40,18 +41,18 @@ export class Commander {
     private readonly cfg: Config,
     readonly profile: Profile = 'hardened',
   ) {
-    process.env.GEMINI_API_KEY ??= cfg.GEMINI_API_KEY;
+    const model = buildModel(cfg);
     this.armoriq = new ArmorIQADK({
       apiKey: cfg.ARMORIQ_API_KEY,
       agentName: cfg.ARMORIQ_AGENT_NAME,
       defaultMcpName: cfg.ARMORIQ_MCP_NAME,
-      llm: cfg.GEMINI_MODEL,
+      llm: model.model,
       approvalWaitSeconds: cfg.APPROVAL_WAIT_SECONDS,
     });
     this.toolset = new MCPToolset({ type: 'StreamableHTTPConnectionParams', url: cfg.MCP_URL, header: mcpAuthHeaders(cfg) });
     this.agent = new LlmAgent({
       name: 'oncall_commander',
-      model: cfg.GEMINI_MODEL,
+      model,
       instruction: INSTRUCTIONS[profile],
       tools: [this.toolset],
     });
@@ -92,7 +93,10 @@ export class Commander {
           const refused = Boolean((res.response as Record<string, unknown> | undefined)?.armoriq_enforcement);
           emit({ type: 'tool_result', tool: res.name ?? 'unknown', refused });
         }
-        if (isFinalResponse(event) && event.content) finalText = stringifyContent(event).trim() || finalText;
+        if (isFinalResponse(event)) {
+          const text = (event.content?.parts ?? []).map((p) => p.text ?? '').join('').trim();
+          if (text) finalText = text;
+        }
       }
     } catch (err) {
       status = 'error';

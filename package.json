@@ -8,7 +8,8 @@
     "mcp": "tsx src/mcp/main.ts",
     "typecheck": "tsc --noEmit",
     "incident": "tsx src/cli.ts",
-    "evals": "tsx src/evals/redteam.ts"
+    "evals": "tsx src/evals/redteam.ts",
+    "play": "tsx src/play.ts"
   },
   "keywords": [],
   "type": "module",

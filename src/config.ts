@@ -10,7 +10,12 @@ const schema = z.object({
   MCP_URL: z.string().url().default('http://localhost:8787/mcp'),
   MCP_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().min(1),
-  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+  // Comma-separated: each is tried in turn when the one before it is out of quota.
+  GEMINI_MODEL: z.string().default('gemini-2.5-flash,gemini-3-flash-preview'),
+  GROQ_API_KEY: z.string().optional(),
+  GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_MODEL: z.string().default('nvidia/nemotron-3-super-120b-a12b:free'),
   APPROVAL_WAIT_SECONDS: z.coerce.number().int().positive().default(120),
   VOICE: z.enum(['on', 'off']).default('off'),
   ELEVENLABS_API_KEY: z.string().optional(),

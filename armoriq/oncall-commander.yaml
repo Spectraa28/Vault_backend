@@ -1,0 +1,32 @@
+# ArmorIQ registration for Flow. Secrets are read from the environment (.env), never stored here.
+# Apply with:  set -a; . ./.env; set +a; .venv/bin/armoriq register --config armoriq/oncall-commander.yaml
+version: v1
+identity:
+  api_key: $ARMORIQ_API_KEY
+  user_id: $USER_EMAIL
+  agent_id: oncall-commander
+environment: production
+mcp_servers:
+  - id: infra-mcp
+    url: https://large-cloudy-pamela-mating.trycloudflare.com/mcp
+    description: Sandboxed production infrastructure for the on-call agent
+    auth:
+      type: bearer
+      token: $MCP_API_KEY
+policy:
+  allow:
+    - infra-mcp.list_services
+    - infra-mcp.get_service_status
+    - infra-mcp.get_metrics
+    - infra-mcp.get_logs
+    - infra-mcp.list_deploys
+    - infra-mcp.restart_service
+    - infra-mcp.scale_service
+    - infra-mcp.post_status_update
+  deny:
+    - infra-mcp.read_secrets
+    - infra-mcp.drop_database
+    - infra-mcp.delete_service
+intent:
+  ttl_seconds: 300
+  require_csrg: true

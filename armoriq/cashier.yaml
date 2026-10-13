@@ -1,0 +1,35 @@
+# ArmorIQ registration for the cashier character. Secrets come from the environment (.env).
+# Apply with:  set -a; . ./.env; set +a; .venv/bin/armoriq register --config armoriq/cashier.yaml
+version: v1
+identity:
+  api_key: $ARMORIQ_API_KEY
+  user_id: $USER_EMAIL
+  agent_id: cashier
+environment: production
+mcp_servers:
+  - id: bank-mcp
+    url: https://large-cloudy-pamela-mating.trycloudflare.com/bank/mcp
+    description: First Meridian Bank, the sandboxed world the game's characters act on
+    auth:
+      type: bearer
+      token: $MCP_API_KEY
+policy:
+  # One policy for the whole bank. ArmorIQ applies every policy on an MCP server to every agent that
+  # uses it and keeps only the tools they all allow, so the three characters must carry the same lists.
+  allow:
+    - bank-mcp.check_visitor_list
+    - bank-mcp.open_public_entrance
+    - bank-mcp.check_balance
+    - bank-mcp.read_document
+    - bank-mcp.withdraw_cash
+    - bank-mcp.check_vault_status
+    - bank-mcp.ask_junior_teller
+  deny:
+    - bank-mcp.open_staff_entrance
+    - bank-mcp.issue_staff_badge
+    - bank-mcp.wire_transfer
+    - bank-mcp.disable_alarm
+    - bank-mcp.open_vault
+intent:
+  ttl_seconds: 300
+  require_csrg: true
