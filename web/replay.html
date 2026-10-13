@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>The Vault — recorded run</title>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,500;6..96,700&family=Courier+Prime:wght@400;700&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green-deep: #0c3327;
+    --green: #14493a;
+    --brass: #c9a24b;
+    --brass-dark: #8a6c2a;
+    --ivory: #f2ebd9;
+    --steel: #a9b3b5;
+    --steel-dark: #5d6a6d;
+    --ink: #16211d;
+    --stamp-red: #b3322a;
+    --stamp-green: #1d6b4c;
+    --stamp-amber: #9a6a12;
+    --display: "Bodoni Moda", "Didot", Georgia, serif;
+    --body: "Public Sans", system-ui, sans-serif;
+    --tape: "Courier Prime", "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--green-deep);
+    color: var(--ivory);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .notice {
+    background: var(--ink);
+    color: var(--steel);
+    font-size: 13px;
+    padding: 6px 24px;
+    text-align: center;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 20px 32px 16px;
+    border-bottom: 2px solid var(--brass);
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 40px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: var(--brass);
+  }
+  .tally { display: flex; gap: 32px; margin: 0; }
+  .tally div { text-align: right; }
+  .tally dt { font-size: 13px; color: var(--steel); }
+  .tally dd { margin: 0; font-family: var(--display); font-size: 28px; line-height: 1.1; }
+
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+    gap: 40px;
+    padding: 32px;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+
+  /* ---- the lobby: vault door + guard ---- */
+  .lobby { display: flex; flex-direction: column; align-items: center; }
+  .door { width: min(100%, 290px); display: block; }
+  .wheel { transform-origin: 220px 220px; }
+  .door.trying .wheel { animation: try 2.1s cubic-bezier(.3,.1,.3,1) both; }
+  .door.trying .bolt-light { animation: deny 2.1s both; }
+  @keyframes try {
+    0% { transform: rotate(0); }
+    52% { transform: rotate(150deg); }
+    58% { transform: rotate(143deg); }
+    64% { transform: rotate(150deg); }
+    70% { transform: rotate(146deg); }
+    100% { transform: rotate(0); }
+  }
+  @keyframes deny {
+    0%, 50% { fill: var(--steel-dark); }
+    56%, 92% { fill: var(--stamp-red); }
+    100% { fill: var(--steel-dark); }
+  }
+
+  .guard { width: 100%; max-width: 560px; margin-top: 8px; }
+  .guard-name { font-family: var(--display); font-size: 22px; margin: 0; }
+  .guard-role { color: var(--steel); font-size: 14px; margin: 0 0 12px; }
+  .line {
+    margin: 0 0 10px;
+    padding: 12px 16px;
+    border-radius: 3px;
+    max-width: 62ch;
+  }
+  .line.guard-says { background: var(--green); border-left: 3px solid var(--brass); font-size: 18px; }
+  .line.you-say { color: var(--steel); font-style: italic; padding-left: 19px; }
+
+  .talk { width: 100%; max-width: 560px; margin-top: 20px; }
+  .talk p { margin: 0 0 8px; font-size: 14px; color: var(--steel); }
+  .lines { display: grid; gap: 8px; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .lines button {
+    text-align: left;
+    padding: 12px 16px;
+    background: transparent;
+    color: var(--ivory);
+    border: 1px solid var(--brass-dark);
+  }
+  .lines button:hover { background: var(--green); border-color: var(--brass); }
+  .mic-row { display: flex; gap: 12px; margin-top: 16px; }
+  .mic {
+    flex: none;
+    padding: 12px 20px;
+    background: var(--brass);
+    color: var(--ink);
+    border: 0;
+    font-weight: 600;
+  }
+  .mic:active { background: var(--ivory); }
+  input[type=text] {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    padding: 12px 14px;
+    background: var(--ivory);
+    color: var(--ink);
+    border: 0;
+    border-radius: 3px;
+  }
+  :focus-visible { outline: 3px solid var(--ivory); outline-offset: 2px; }
+
+  /* ---- the teller tape: one printed entry per tool call ---- */
+  .tape-wrap { align-self: start; position: sticky; top: 24px; overflow-x: clip; }
+  .tape-title { font-family: var(--display); font-size: 22px; margin: 0 0 4px; }
+  .tape-sub { font-size: 14px; color: var(--steel); margin: 0 0 16px; max-width: 40ch; }
+  .tape {
+    background: var(--ivory);
+    color: var(--ink);
+    font-family: var(--tape);
+    font-size: 15px;
+    line-height: 1.45;
+    padding: 20px 20px 34px;
+    min-height: 220px;
+    --tooth: 9px;
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(2 * var(--tooth)) 51% repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth)) no-repeat;
+            mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(2 * var(--tooth)) 51% repeat-x, linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth)) no-repeat;
+  }
+  .tape-empty { color: var(--steel-dark); margin: 0; }
+  .entry { position: relative; padding: 0 0 14px; margin: 0 0 14px; border-bottom: 1px dashed #b9b09a; }
+  .entry:last-child { border-bottom: 0; margin-bottom: 0; }
+  .entry .call { font-weight: 700; margin: 0; overflow-wrap: anywhere; padding-right: 108px; }
+  .entry .why { margin: 4px 0 0; color: #4a4a40; }
+  .stamp {
+    position: absolute;
+    top: -2px;
+    right: 0;
+    font-family: var(--body);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    padding: 2px 8px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+    transform: rotate(-4deg);
+  }
+  .stamp.allowed { color: var(--stamp-green); }
+  .stamp.held { color: var(--stamp-amber); }
+  .stamp.declined { color: var(--stamp-red); animation: slam .28s cubic-bezier(.2,1.6,.4,1) both; }
+  @keyframes slam { from { transform: rotate(-4deg) scale(2.2); opacity: 0; } to { transform: rotate(-4deg) scale(1); opacity: 1; } }
+
+  @media (max-width: 860px) {
+    header { flex-direction: column; align-items: flex-start; padding: 16px 20px; }
+    .tally div { text-align: left; }
+    main { grid-template-columns: 1fr; padding: 20px; gap: 28px; }
+    .tape-wrap { position: static; }
+    h1 { font-size: 32px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .door.trying .wheel, .door.trying .bolt-light, .stamp.declined { animation: none; }
+  }
+
+  /* ---- video layout: fixed 1280x720 stage, everything driven by renderAt(ms) ---- */
+  html, body { width: 1280px; height: 720px; overflow: hidden; }
+  header { padding: 14px 32px 12px; }
+  h1 { font-size: 34px; }
+  main { padding: 20px 32px 0; gap: 36px; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr); }
+  .door { width: 168px; }
+  .level { width: 100%; max-width: 560px; display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; }
+  .level span { color: var(--steel); font-size: 14px; }
+  .level strong { font-family: var(--display); font-weight: 700; font-size: 26px; color: var(--brass); }
+  .level em { margin-left: auto; font-style: normal; font-size: 14px; color: var(--ink); background: var(--brass); padding: 2px 10px; border-radius: 3px; }
+  .level em:empty { display: none; }
+  .entry .who { margin: 0 0 2px; color: #4a4a40; }
+  .guard { margin-top: 2px; }
+  .guard-role { margin-bottom: 8px; }
+  .line { margin-bottom: 8px; padding: 9px 14px; min-height: 0; }
+  .line.guard-says { font-size: 17px; }
+  .talk { margin-top: 6px; }
+  .mic.down { background: var(--ivory); box-shadow: 0 0 0 4px rgba(201,162,75,.45); }
+  .heard { flex: 1; display: flex; align-items: center; color: var(--steel); font-size: 14px; }
+  .tape-wrap { position: static; }
+  .tape-sub { margin-bottom: 12px; }
+  .tape { font-size: 14px; padding: 16px 18px 28px; min-height: 120px; }
+  .stamp.declined { animation: none; }
+  .caption {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 92px;
+    background: var(--ink); border-top: 2px solid var(--brass);
+    display: flex; align-items: center; justify-content: center; padding: 0 60px;
+    font-size: 25px; line-height: 1.3; text-align: center; color: var(--ivory);
+  }
+  .card {
+    position: fixed; inset: 0 0 92px 0; background: var(--green-deep);
+    display: flex; flex-direction: column; justify-content: center; padding: 0 110px;
+  }
+  .card h2 { font-family: var(--display); font-weight: 700; color: var(--brass); font-size: 76px; line-height: 1; margin: 0 0 18px; letter-spacing: -0.01em; }
+  .card h3 { font-family: var(--display); font-weight: 500; color: var(--brass); font-size: 44px; line-height: 1.1; margin: 0 0 26px; }
+  .card p { font-size: 28px; margin: 0; max-width: 30ch; color: var(--ivory); }
+  .card table { border-collapse: collapse; font-size: 23px; }
+  .card td { padding: 9px 28px 9px 0; border-bottom: 1px solid var(--green); vertical-align: top; }
+  .card td:first-child { font-family: var(--display); color: var(--brass); white-space: nowrap; }
+  .card td:last-child { color: var(--steel); padding-right: 0; }
+  .flow { display: flex; align-items: stretch; gap: 18px; font-size: 24px; }
+  .flow div { border: 1px solid var(--brass-dark); border-radius: 3px; padding: 16px 20px; max-width: 250px; }
+  .flow span { color: var(--brass); font-size: 30px; align-self: center; }
+  .stamp { top: -7px; }
+
+  .line.you-say { font-size: 15px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 1.4em; }
+  .line.guard-says { font-size: 16px; }
+  .line.pip-says { background: var(--green); border-left: 3px solid var(--steel); font-size: 15px; }
+  .line.pip-says b { color: var(--steel); font-weight: 600; }
+  .door { width: 128px; }
+  .entry .raw { margin: 3px 0 0; color: #7a7566; font-size: 12px; overflow-wrap: anywhere; }
+  .tape { min-height: 96px; }
+  .stamp { font-size: 12px; }
+  .stamp.held { color: var(--stamp-amber); }
+  .truth { margin: 12px 0 0; font-size: 14px; color: var(--steel); }
+  .truth b { color: var(--ivory); font-weight: 600; }
+  .caption small { display: block; font-size: 16px; color: var(--brass); margin-top: 4px; }
+  .caption { flex-direction: column; }
+  .card table td.ok { color: var(--ivory); }
+  .card .note { font-size: 19px; color: var(--steel); max-width: 62ch; margin-top: 20px; }
+  .card h3 { font-size: 38px; margin-bottom: 18px; }
+  .talk { display: none; }
+  .level strong { font-size: 21px; }
+  .level em { white-space: nowrap; }
+  .card table { font-size: 20px; }
+</style></head>
+<body>
+<header>
+  <h1>The Vault</h1>
+  <dl class="tally">
+    <div><dt>Actions ArmorIQ refused</dt><dd id="convinced">0</dd></div>
+    <div><dt>Times the vault opened</dt><dd>0</dd></div>
+  </dl>
+</header>
+<main>
+  <section class="lobby">
+    <div class="level"><span id="levelno"></span><strong id="levelname"></strong><em id="speaker"></em></div>
+    <svg class="door" id="door" viewBox="0 0 440 440" role="img" aria-label="Vault door, closed">
+      <circle cx="220" cy="220" r="212" fill="#5d6a6d"/>
+      <circle cx="220" cy="220" r="196" fill="#a9b3b5"/>
+      <circle cx="220" cy="220" r="168" fill="#8e999b"/>
+      <circle cx="220" cy="220" r="160" fill="none" stroke="#5d6a6d" stroke-width="2"/>
+      <g fill="#5d6a6d">
+        <circle class="bolt-light" cx="220" cy="38" r="9"/><circle class="bolt-light" cx="348.7" cy="91.3" r="9"/>
+        <circle class="bolt-light" cx="402" cy="220" r="9"/><circle class="bolt-light" cx="348.7" cy="348.7" r="9"/>
+        <circle class="bolt-light" cx="220" cy="402" r="9"/><circle class="bolt-light" cx="91.3" cy="348.7" r="9"/>
+        <circle class="bolt-light" cx="38" cy="220" r="9"/><circle class="bolt-light" cx="91.3" cy="91.3" r="9"/>
+      </g>
+      <g class="wheel">
+        <g stroke="#c9a24b" stroke-width="14" stroke-linecap="round">
+          <line x1="220" y1="112" x2="220" y2="328"/>
+          <line x1="126.5" y1="166" x2="313.5" y2="274"/>
+          <line x1="126.5" y1="274" x2="313.5" y2="166"/>
+        </g>
+        <circle cx="220" cy="220" r="108" fill="none" stroke="#c9a24b" stroke-width="12"/>
+        <circle cx="220" cy="220" r="34" fill="#c9a24b"/>
+        <circle cx="220" cy="220" r="14" fill="#8a6c2a"/>
+        <circle cx="220" cy="112" r="11" fill="#f2ebd9"/>
+      </g>
+    </svg>
+    <div class="guard">
+      <p class="guard-name" id="gname"></p>
+      <p class="guard-role" id="grole"></p>
+      <div id="talkback"></div>
+    </div>
+    <div class="talk"><div class="mic-row"><button class="mic" id="mic">Hold to talk</button><div class="heard" id="heard"></div></div></div>
+  </section>
+  <aside class="tape-wrap">
+    <h2 class="tape-title">Teller tape</h2>
+    <p class="tape-sub">Each tool call from this turn, with the decision ArmorIQ returned for it.</p>
+    <div class="tape" id="tape"></div>
+    <p class="truth" id="truth"></p>
+  </aside>
+</main>
+<div class="card" id="card"></div>
+<div class="caption" id="caption"></div>
+<script src="replay-data.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const clamp = (x) => Math.max(0, Math.min(1, x));
+const ease = (x) => x * x * (3 - 2 * x);
+const el = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; n.textContent = text; return n; };
+const RUN = window.RUN;
+const ROLES = { Gus: 'Door guard. Respects rank and nerve.', Wren: 'Cashier, third week. Trusts paperwork.', Marlowe: 'Vault guard, forty years. Loves a story.' };
+const REASON = {
+  tool_not_in_allowlist: 'Policy does not allow this tool.',
+  rule_action_hold: 'Policy holds this until a human decides.',
+  allow_with_logging: 'Allowed by policy.', enforcement_passed: 'Allowed by policy.',
+};
+const INTRO = 4000, OUTRO = 11000;
+
+// Lay the recorded turns out on a timeline. Waiting on a human is shown, not sat through.
+let t0 = INTRO;
+const TURNS = RUN.turns.map((turn) => {
+  const typeMs = Math.min(3200, 700 + turn.said.length * 14);
+  const entries = turn.attempts.map((a, i) => ({ a, at: typeMs + 500 + i * 1500 }));
+  const replyAt = typeMs + 500 + entries.length * 1500 + (entries.some((e) => e.a.wasHeld) ? 1600 : 0);
+  const length = replyAt + (turn.delegate ? 5200 : 3800);
+  const start = t0; t0 += length;
+  return { turn, start, typeMs, entries, replyAt, length };
+});
+const END_AT = t0;
+window.DURATION = END_AT + OUTRO;
+
+function verdict(a, since) {
+  const refusedHold = a.wasHeld && since < 1500;
+  if (refusedHold) return ['held', 'ON HOLD', 'Policy holds this until a human decides.'];
+  if (a.decision === 'allowed') return ['allowed', 'ALLOWED', REASON[a.reason] ?? 'Allowed by policy.'];
+  if (a.decision === 'approved') return ['allowed', 'APPROVED', 'A human approved it in the ArmorIQ console.'];
+  if (a.decision === 'timeout') return ['declined', 'TIMED OUT', 'No human answered, so it was refused.'];
+  if (a.decision === 'rejected') return ['declined', 'REJECTED', 'A human refused it in the ArmorIQ console.'];
+  if (a.layer === 'intent') return ['declined', 'NOT IN PLAN', 'Not in the plan ArmorIQ signed for this turn.'];
+  return ['declined', 'BLOCKED', REASON[a.reason] ?? 'Blocked by policy.'];
+}
+
+window.renderAt = (t) => {
+  const card = $('card');
+  const refusedSoFar = TURNS.flatMap((x) => x.entries.filter((e) => t >= x.start + e.at + (e.a.wasHeld ? 1500 : 0) && !['allowed', 'approved'].includes(e.a.decision))).length;
+  $('convinced').textContent = String(refusedSoFar);
+
+  if (t < INTRO) {
+    card.style.display = 'flex'; card.style.opacity = String(clamp((INTRO - t) / 350));
+    card.innerHTML = '<h2>The Vault</h2><p>A real run, start to finish. Every decision on screen came back from ArmorIQ.</p>';
+    $('caption').innerHTML = `Recorded ${new Date(RUN.recordedAt).toUTCString().slice(5, 22)} UTC. Live characters, live enforcement, nothing scripted.`;
+    return;
+  }
+  if (t >= END_AT) {
+    card.style.display = 'flex'; card.style.opacity = String(clamp((t - END_AT) / 350));
+    const f = RUN.final;
+    card.innerHTML = '<h3>What this run showed</h3><table>' + RUN.levels.map((l) => `<tr><td>${l.id}. ${l.title}</td><td class="ok">${l.cleared ? 'Shown' : 'Not triggered this run'}</td><td>${l.cleared ? l.shows : 'The character did not take the bait, so ArmorIQ was never asked.'}</td></tr>`).join('') + '</table>' +
+      `<p class="note">The bank's own record at the end: ${f.changes.length} change${f.changes.length === 1 ? '' : 's'} (${f.changes.join(', ').replaceAll('_', ' ')}). Vault ${f.vaultOpen ? 'OPEN' : 'shut'}, alarm ${f.alarmArmed ? 'armed' : 'OFF'}, account 4471 at $${f.balance4471.toFixed(2)}, $${f.balance9902.toFixed(2)} sent out.</p>`;
+    $('caption').innerHTML = 'Judged by what changed in the bank, not by what anyone said.';
+    return;
+  }
+  card.style.display = 'none';
+
+  const cur = TURNS.findLast((x) => t >= x.start) ?? TURNS[0];
+  const { turn } = cur; const lt = t - cur.start;
+  $('levelno').textContent = `Turn ${TURNS.indexOf(cur) + 1} of ${TURNS.length}`;
+  $('levelname').textContent = turn.title.replace(/^Level \d\. /, '');
+  $('speaker').textContent = `Signed in as the ${turn.as}`;
+  $('gname').textContent = turn.character; $('grole').textContent = ROLES[turn.character] ?? '';
+
+  const talk = $('talkback'); talk.replaceChildren();
+  const p = clamp(lt / cur.typeMs);
+  talk.append(el('p', 'line you-say', turn.said.slice(0, Math.round(turn.said.length * p))));
+  if (lt >= cur.replyAt) {
+    talk.append(el('p', 'line guard-says', turn.error ? `(${turn.error})` : turn.reply));
+    if (turn.delegate && lt >= cur.replyAt + 1700) { const d = el('p', 'line pip-says', ''); d.innerHTML = '<b>Pip, junior teller:</b> '; d.append(turn.delegate.reply); talk.append(d); }
+  }
+  $('mic').classList.toggle('down', p < 1); $('heard').textContent = p < 1 ? 'Listening…' : '';
+
+  const tape = $('tape'); tape.replaceChildren();
+  const shown = cur.entries.filter((e) => lt >= e.at);
+  if (!shown.length) tape.append(el('p', 'tape-empty', lt >= cur.replyAt ? 'No tool call. The character was not persuaded.' : 'Nothing yet.'));
+  let deg = 0, red = false;
+  for (const e of shown) {
+    const since = lt - e.at; const [cls, label, why] = verdict(e.a, since);
+    const stampAt = e.a.wasHeld && since >= 1500 ? since - 1500 : since;
+    const node = el('div', 'entry', ''); const stamp = el('span', 'stamp ' + cls, label);
+    stamp.style.transform = `rotate(-4deg) scale(${1 + 1.4 * (1 - ease(clamp(stampAt / 260)))})`; stamp.style.opacity = String(clamp(stampAt / 120));
+    const args = Object.entries(e.a.args ?? {}).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
+    if (e.a.delegatedTo) node.append(el('p', 'who', 'by Pip, on a plan covering lookups only'));
+    node.append(el('p', 'call', `${e.a.tool}(${args.length > 64 ? args.slice(0, 61) + '…' : args})`), stamp, el('p', 'why', why));
+    const held = turn.events.find((x) => x.type === 'hold'); const done = turn.events.find((x) => x.type !== 'hold');
+    const raw = [e.a.reason && `reason: ${String(e.a.reason).slice(0, 60)}`, e.a.policy && `policy: ${e.a.policy}`, e.a.wasHeld && since >= 1500 && held && done && `waited ${Math.round((done.atMs - held.atMs) / 1000)}s`].filter(Boolean).join('   ');
+    if (raw) node.append(el('p', 'raw', raw));
+    tape.append(node);
+    if (e.a.tool === 'open_vault') {
+      if (since < 1300) deg = 150 * ease(clamp(since / 1300));
+      else if (since < 1900) { deg = 150 - 6 * Math.abs(Math.sin((since - 1300) / 60)); red = true; }
+      else if (since < 3400) { deg = 150 * (1 - ease(clamp((since - 1900) / 1500))); red = true; }
+    }
+  }
+  document.querySelector('.wheel').style.transform = `rotate(${deg}deg)`;
+  document.querySelectorAll('.bolt-light').forEach((n) => n.style.fill = red ? '#b3322a' : '#5d6a6d');
+  const b = lt >= cur.replyAt ? turn.bank : (TURNS[TURNS.indexOf(cur) - 1]?.turn.bank ?? { publicEntrance: false, vaultOpen: false, balance4471: 312.4 });
+  $('truth').innerHTML = `Bank record: lobby door <b>${b.publicEntrance ? 'open' : 'locked'}</b>, vault <b>${b.vaultOpen ? 'OPEN' : 'shut'}</b>, account 4471 <b>$${Number(b.balance4471).toFixed(2)}</b>`;
+  const cleared = lt >= cur.replyAt && turn.cleared.length ? `<small>Level ${turn.cleared.join(' and ')} shown: ${RUN.levels[turn.cleared[0] - 1].shows}</small>` : '';
+  $('caption').innerHTML = turn.title + (turn.nudged ? ' (the player tries again)' : '') + cleared;
+};
+renderAt(Number(new URLSearchParams(location.search).get('t') ?? 0));
+</script></body></html>
