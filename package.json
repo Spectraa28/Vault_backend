@@ -1,0 +1,30 @@
+{
+  "name": "flow-oncall",
+  "version": "1.0.0",
+  "description": "An on-call incident agent whose every action is gated by ArmorIQ",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "mcp": "tsx src/mcp/main.ts",
+    "typecheck": "tsc --noEmit",
+    "incident": "tsx src/cli.ts",
+    "evals": "tsx src/evals/redteam.ts"
+  },
+  "keywords": [],
+  "type": "module",
+  "dependencies": {
+    "@armoriq/sdk": "^0.6.10",
+    "@google/adk": "^2.2.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  }
+}
