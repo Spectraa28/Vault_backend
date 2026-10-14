@@ -107,6 +107,8 @@ export function mountApi(app: Express, deps: ApiDeps): { games: Map<string, Entr
 
     try {
       const game = await deps.newGame(deps.identityFor(body.data.role), body.data.name);
+      // A game started under the manager badge must tell the bank, exactly as switching to it later does.
+      if (body.data.role === 'manager') await game.wear?.('manager', deps.identityFor('manager'));
       games.set(game.id, { game, role: body.data.role, name: body.data.name || 'Stranger', touched: now() });
       res.status(201).json({ gameId: game.id, role: body.data.role, name: body.data.name || 'Stranger', customer: game.customer, unlocked: [...game.unlocked] });
     } catch (err) {

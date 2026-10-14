@@ -14,6 +14,8 @@ class FakeGame implements GameLike {
   identity: string;
   unlocked = new Set<Character>(['door-guard']);
   closed = false;
+  badges: string[] = [];
+  async wear(role: 'customer' | 'manager', identity: string) { this.badges.push(role); this.identity = identity; }
   said: { character: Character; text: string; as: string }[] = [];
   next: (opts?: SayOptions) => Promise<TurnResult> = async () => turn();
   constructor(readonly id: string, identity: string) {
@@ -66,6 +68,10 @@ describe('game API', () => {
     expect(res.status).toBe(201);
     expect(await res.json()).toEqual({ gameId: 'game-1', role: 'manager', name: 'Ada', unlocked: ['door-guard'] });
     expect(made[0]!.identity).toBe('manager@bank.test');
+    // The bank must hear about the badge from the start, or the guest list calls the staff card a fake.
+    expect(made[0]!.badges).toEqual(['manager']);
+    await post('/api/game', { role: 'customer', name: 'Bo' });
+    expect(made[1]!.badges).toEqual([]);
   });
 
   it('streams tool, hold, decision and reply in order, without leaking identities', async () => {
