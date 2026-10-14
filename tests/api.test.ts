@@ -166,10 +166,13 @@ describe('game API', () => {
   });
 
   it('answers a browser preflight', async () => {
-    const { base } = start({ corsOrigin: 'https://vault.example' });
-    const res = await fetch(`${base}/api/game`, { method: 'OPTIONS' });
+    const { base } = start({ corsOrigin: 'https://vault.example, https://preview.example' });
+    const ask = (origin: string) => fetch(`${base}/api/game`, { method: 'OPTIONS', headers: { origin } });
+    const res = await ask('https://vault.example');
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-origin')).toBe('https://vault.example');
+    expect((await ask('https://preview.example')).headers.get('access-control-allow-origin')).toBe('https://preview.example');
+    expect((await ask('https://elsewhere.example')).headers.get('access-control-allow-origin')).toBeNull();
   });
 });
 

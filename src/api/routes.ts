@@ -88,7 +88,11 @@ export function mountApi(app: Express, deps: ApiDeps): { games: Map<string, Entr
   };
 
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
-    res.setHeader('Access-Control-Allow-Origin', deps.corsOrigin ?? '*');
+    // CORS_ORIGIN may list several sites, comma-separated (the game's domain and a preview address).
+    const allowed = (deps.corsOrigin ?? '*').split(',').map((o) => o.trim()).filter(Boolean);
+    const origin = req.header('origin');
+    if (allowed.includes('*')) res.setHeader('Access-Control-Allow-Origin', '*');
+    else if (origin && allowed.includes(origin)) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
     res.setHeader('Access-Control-Allow-Headers', 'content-type, x-access-code');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') return void res.status(204).end();

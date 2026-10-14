@@ -183,13 +183,16 @@ text.
 
 ### Deploying
 
-One web service runs everything: `npm start` serves the bank MCP server, the game API and, once
-`frontend/dist` has been built, the game itself on the same address. `render.yaml` is a Render
-blueprint for exactly that on the free plan: connect the repository in Render, apply the blueprint
-and fill in the keys it asks for. Leave `MCP_URL` unset there, so the game calls its own bank.
+The live game runs as two parts: the back end on Railway (`railway.json`) and the front end on
+Vercel (`frontend/vercel.json`).
 
-Free services sleep after 15 idle minutes. `.github/workflows/keep-alive.yml` pings the game every
-10 minutes once the repository variable `VAULT_URL` is set to its address.
+- Railway: `npm ci`, then `npm start`; health check `/api/health`. Set the keys from `.env`, plus
+  `CORS_ORIGIN` to the front end's address (several may be given, comma-separated) and an
+  `MCP_API_KEY`. Leave `MCP_URL` unset, so the game calls its own bank.
+- Vercel: root directory `frontend`, with `VITE_API_URL` set to the back end's address.
+
+One process can also serve everything: `npm start` serves `frontend/dist` when it has been built,
+and `render.yaml` describes that as a single Render service.
 
 ### Registering on ArmorIQ
 
