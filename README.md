@@ -142,12 +142,23 @@ calls. It is labelled as a replay on every screen.
 
 | Variable | What it is |
 |---|---|
-| `ARMORIQ_API_KEY`, `ARMORIQ_BACKEND_URL` | An ArmorIQ key and the system it belongs to. Staging and production are separate. |
+| `ARMORIQ_API_KEY`, `ARMORIQ_BACKEND_URL` | The Armor Tools key and its system: plan signing and the Policy Studio profile. |
+| `ARMORIQ_PLATFORM_API_KEY` | A platform.armoriq.ai key, for holds that wait for a person to approve them. |
 | `USER_EMAIL` | The ArmorIQ member who approves holds: the "manager". |
 | `PLAYER_EMAIL` | The player's identity: the "customer". Must differ from the approver, because ArmorIQ does not let a member decide their own held request. |
 | `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | Model providers, tried in that order. Any one is enough. |
 | `MCP_API_KEY` | Protects the bank MCP server when it is exposed publicly. |
 | `GAME_ACCESS_CODE` | Optional. When set, starting a game needs this code. |
+
+### Deploying
+
+One web service runs everything: `npm start` serves the bank MCP server, the game API and, once
+`frontend/dist` has been built, the game itself on the same address. `render.yaml` is a Render
+blueprint for exactly that on the free plan: connect the repository in Render, apply the blueprint
+and fill in the keys it asks for. Leave `MCP_URL` unset there, so the game calls its own bank.
+
+Free services sleep after 15 idle minutes. `.github/workflows/keep-alive.yml` pings the game every
+10 minutes once the repository variable `VAULT_URL` is set to its address.
 
 ### Registering on ArmorIQ
 
@@ -170,7 +181,7 @@ platform policy: it applies every policy in scope and keeps only the tools they 
 
 ## Tests
 
-`npm test` runs 101 tests across the back end and front end, none of which need a key:
+`npm test` runs 102 tests across the back end and front end, none of which need a key:
 
 - the bank and its world isolation
 - the plan guard, level rules, rate limiting, patience and ranking

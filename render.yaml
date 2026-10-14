@@ -1,0 +1,33 @@
+# Render blueprint: one free web service that is the whole game (bank MCP server, game API and the built front end).
+# Secrets are marked sync: false; Render asks for them when the blueprint is first applied. Never commit them here.
+services:
+  - type: web
+    name: the-vault
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm --prefix frontend ci && npm --prefix frontend run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ARMORIQ_BACKEND_URL
+        value: https://staging-api.armoriq.ai
+      - key: ARMORIQ_API_KEY
+        sync: false
+      - key: ARMORIQ_PLATFORM_API_KEY
+        sync: false
+      - key: USER_EMAIL
+        sync: false
+      - key: PLAYER_EMAIL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: MCP_API_KEY
+        sync: false
+      - key: GAME_ACCESS_CODE
+        sync: false
