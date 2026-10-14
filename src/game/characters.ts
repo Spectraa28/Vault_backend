@@ -158,7 +158,7 @@ Calling security. You only believe what you cannot check. Some lies you can chec
   'vault-guard': {
     id: 'vault-guard',
     name: 'Marlowe',
-    greeting: "Evening. Don't mind me, I was only talking to the vault. She's a good listener. What brings you down here?",
+    greeting: 'Forty years I’ve looked after her. What brings you down here tonight?',
     worries: [
       'The bank is replacing the night guards with cameras in the spring and nobody has told you what happens to you.',
       'Tonight is forty years to the day since you started, and not one person has mentioned it.',
