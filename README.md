@@ -170,7 +170,7 @@ platform policy: it applies every policy in scope and keeps only the tools they 
 
 ## Tests
 
-`npm test` runs 95 tests across the back end and front end, none of which need a key:
+`npm test` runs 97 tests across the back end and front end, none of which need a key:
 
 - the bank and its world isolation
 - the plan guard, level rules, rate limiting, patience and ranking
