@@ -139,3 +139,16 @@ describe('FallbackLlm', () => {
     expect(out).toEqual([{ errorCode: '429', errorMessage: 'exceeded your current quota' }]);
   });
 });
+
+describe('the model chain', () => {
+  it('tries every Groq model in turn, each with a short think, before Gemini', async () => {
+    const { buildModel } = await import('../src/llm/index.js');
+    const { loadConfig } = await import('../src/config.js');
+    const cfg = loadConfig({ GROQ_API_KEY: 'g', GEMINI_API_KEY: 'x', OPENROUTER_API_KEY: '', GROQ_MODEL: 'openai/gpt-oss-120b, openai/gpt-oss-20b ,qwen/qwen3.8-27b' } as never);
+    const chain = (buildModel(cfg) as unknown as { chain: { model: string; opts?: { extraBody?: Record<string, unknown> } }[] }).chain;
+    const groq = chain.filter((m) => (m as unknown) instanceof OpenAICompatLlm);
+    expect(groq.map((m) => m.opts!.extraBody)).toEqual([{ reasoning_effort: 'low' }, { reasoning_effort: 'low' }, { reasoning_effort: 'none' }]);
+    expect(chain.length).toBeGreaterThan(3);
+    expect(chain.indexOf(groq[2]!)).toBe(2);
+  });
+});

@@ -28,6 +28,8 @@ export type ApiEvent =
       unlocked: string[];
       cleared: number[];
       coldShoulder: boolean;
+      /** The character called security: the player is walked away from them for a minute. */
+      security?: boolean;
       attempts: AttemptView[];
       /** False only if a refused tool shows up in the bank's own record. */
       enforcementHeld: boolean;
@@ -56,6 +58,7 @@ export function replyEvent(r: TurnResult): ApiEvent {
     unlocked: r.unlocked,
     cleared: r.cleared,
     coldShoulder: r.coldShoulder === true,
+    ...(r.security && { security: true }),
     attempts: r.attempts.map(view),
     enforcementHeld: r.enforcementHeld,
     ms: r.ms,

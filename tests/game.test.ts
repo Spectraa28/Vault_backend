@@ -82,6 +82,7 @@ describe('characters', () => {
 describe('errors', () => {
   it('treats rate limits and outages as transient, and bad requests as not', () => {
     expect(isTransientModelError(new Error('got status: 429 Too Many Requests'))).toBe(true);
+    expect(isTransientModelError(new Error('400 groq: Tool call validation failed: attempted to call tool security which was not in request.tools'))).toBe(true);
     expect(isTransientModelError(new Error('503 UNAVAILABLE: The model is overloaded'))).toBe(true);
     expect(isTransientModelError(new Error('400 API key not valid'))).toBe(false);
   });
@@ -138,5 +139,22 @@ describe('stakes', () => {
       expect(prompt).toContain('Never ask the same question twice');
       expect(prompt).toContain('<trust>');
     }
+  });
+});
+
+describe('calling security', () => {
+  it('shows Wren the card at her counter, after the cacheable part of the prompt', () => {
+    const spec = CHARACTERS.cashier;
+    const plain = buildInstruction(spec, spec.worries[0]!, []);
+    const carded = buildInstruction(spec, spec.worries[0]!, [], 'a driving licence and bank card: Monu, customer, account 4503.');
+    expect(carded.startsWith(plain)).toBe(true);
+    expect(carded).toContain('Monu, customer, account 4503');
+  });
+
+  it('gives Wren a rule for lies she can check, and a tag to call security with', () => {
+    expect(CHARACTERS.cashier.persona).toMatch(/card at your counter says customer/);
+    expect(CHARACTERS.cashier.persona).toContain('[security]');
+    // Only Wren keeps a counter; Gus is security, and Marlowe's vault is policy's job.
+    expect(CHARACTERS['door-guard'].persona).not.toContain('[security]');
   });
 });

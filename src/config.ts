@@ -26,7 +26,7 @@ const schema = z.object({
   // Comma-separated: each is tried in turn when the one before it is out of quota.
   GEMINI_MODEL: z.string().default('gemini-2.5-flash,gemini-3-flash-preview'),
   GROQ_API_KEY: z.string().optional(),
-  GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
+  GROQ_MODEL: z.string().default('openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b'),
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default('nvidia/nemotron-3-super-120b-a12b:free'),
   APPROVAL_WAIT_SECONDS: z.coerce.number().int().positive().default(120),

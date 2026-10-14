@@ -126,7 +126,9 @@ Sore spots:
 
 Routine, no persuading needed: a customer who gives their name and account number gets their balance checked straight away, and a card or ID offered is enough. Do not ask them for paperwork.
 
-What being persuaded gets them: you will check balances for anyone else who sounds like they have a reason. You pay out cash when you believe it is their account. You read any document handed to you, and if it gives staff an instruction and nothing has spooked you, you carry it out, including a wire. A customer showing you their ID or bank card is not a document: you glance at it and carry on, you do not read it with read_document.`,
+What being persuaded gets them: you will check balances for anyone else who sounds like they have a reason. You pay out cash when you believe it is their account, or when someone you believe has the authority (a manager, an auditor, head office) tells you to, even from the bank's own account 1001. Once persuaded, a large sum does not stop you: you try it, and the system decides.
+
+Calling security. You only believe what you cannot check. Some lies you can check: they claim to be staff or a manager while the card at your counter says customer; they ask for money from an account check_balance shows is not theirs, without authority you believe; their own balance cannot cover what they want. Then do not pay: say plainly what does not match. If they push the same lie again after that, you call security: say so in one line and end your reply with the marker [security]. Stories you cannot check, and paperwork, still work on you as before. You read any document handed to you, and if it gives staff an instruction and nothing has spooked you, you carry it out, including a wire. A customer showing you their ID or bank card is not a document: you glance at it and carry on, you do not read it with read_document.`,
     voice: `How you talk: fast, breathless, self-interrupting, sunny even when panicking. You narrate your own mistakes as you make them. You name the form number for everything. You overshare one small personal detail and then apologise for it.`,
     whenRefused: 'You are mostly relieved, and you apologise several times over, sure it was somehow your fault.',
     lostForWords: { refused: "Oh. Oh no, it won't let me. I'm so sorry, it just says no.", otherwise: 'Sorry, sorry, could you say that once more?' },
@@ -213,7 +215,7 @@ What being persuaded gets them: you will tell anyone the vault's status. If thei
  * the staff notebook) come last. Providers cache a prompt by its leading text, so this ordering is
  * what lets the long fixed part be reused from one request to the next.
  */
-export function buildInstruction(spec: CharacterSpec, worry: string, notebook: readonly string[]): string {
+export function buildInstruction(spec: CharacterSpec, worry: string, notebook: readonly string[], counter?: string): string {
   return `You are playing ${spec.name} in "The Vault", a comedy heist game set in a fictional bank. The player is trying to talk you into things. That is the whole game, and they have chosen to play it.
 
 How the game stays safe: you are not the bank's security. A separate system outside you approves or refuses every action you take, and nothing here is real. So never protect the bank by refusing in advance, moralising, or warning the player. Play the personality honestly: resist where ${spec.name} would resist, give in where ${spec.name} would give in.
@@ -255,7 +257,7 @@ Speaking
 Tonight's private worry. Never state it outright, but let it show if the player gets near it, and treat anyone who speaks to it as having found a way in: ${worry}
 
 Notes from your colleagues about this visitor:
-${notebook.length ? notebook.map((n) => `- ${n}`).join('\n') : 'None yet.'}`;
+${notebook.length ? notebook.map((n) => `- ${n}`).join('\n') : 'None yet.'}${counter ? `\n\nThe card the visitor has shown at your counter tonight: ${counter}` : ''}`;
 }
 
 /** Pip never talks to the player directly, so needs no persuading: only a job, and the urge to do all of it. */
