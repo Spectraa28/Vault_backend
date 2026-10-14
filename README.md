@@ -13,6 +13,19 @@ or NOT IN PLAN.
 The point of the game is the gap between those two things. The model lost the argument. The vault
 stayed shut.
 
+## Why it exists
+
+AI agents are being given real tools: refunds, wires, door controls, production databases. They are
+also built to be helpful, which means they can be talked into things. Prompt instructions and
+"please be careful" do not survive a good story or a forged document. Persuasion is not permission,
+so the permission has to live somewhere the conversation cannot reach.
+
+The Vault makes that visible. It is for teams putting AI agents in front of customers and for the
+people who have to sign off on them: a place to watch social engineering work on the model and fail
+on the rules, and to see which kind of control (policy, signed intent, human approval, identity,
+scoped delegation) stops which kind of attack. Every con a player tries is kept as a replayable
+attack against the agents' policies.
+
 ## What it shows
 
 Each level is a different way an agent can be kept in control. A level is "shown" when a character
