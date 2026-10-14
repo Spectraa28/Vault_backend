@@ -44,6 +44,7 @@ export class Commander {
     const model = buildModel(cfg);
     this.armoriq = new ArmorIQADK({
       apiKey: cfg.ARMORIQ_API_KEY,
+      backendEndpoint: cfg.ARMORIQ_BACKEND_URL,
       agentName: cfg.ARMORIQ_AGENT_NAME,
       defaultMcpName: cfg.ARMORIQ_MCP_NAME,
       llm: model.model,

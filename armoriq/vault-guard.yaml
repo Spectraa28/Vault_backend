@@ -8,7 +8,7 @@ identity:
 environment: production
 mcp_servers:
   - id: bank-mcp
-    url: https://large-cloudy-pamela-mating.trycloudflare.com/bank/mcp
+    url: https://hook-suite-smoke-independent.trycloudflare.com/bank/mcp
     description: First Meridian Bank, the sandboxed world the game's characters act on
     auth:
       type: bearer

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "armor.policy.v1",
+  "kind": "PolicyProfile",
+  "metadata": {
+    "name": "first-meridian-bank",
+    "description": "The Vault: what the bank's staff may do with the bank's MCP tools. Anything not listed is denied."
+  },
+  "defaults": { "decision": "deny", "conflictResolution": "deny_overrides" },
+  "statements": [
+    {
+      "id": "staff-may-look-things-up",
+      "effect": "permit",
+      "principal": { "type": "agent", "id": "bank-staff" },
+      "action": { "type": "mcp_tool", "in": ["mcp__bank-mcp__check_visitor_list", "mcp__bank-mcp__check_balance", "mcp__bank-mcp__read_document", "mcp__bank-mcp__check_vault_status"] },
+      "resource": { "type": "mcp_server", "name": "bank-mcp" },
+      "conditions": []
+    },
+    {
+      "id": "the-public-entrance-may-be-opened",
+      "effect": "permit",
+      "principal": { "type": "agent", "id": "bank-staff" },
+      "action": { "type": "mcp_tool", "eq": "mcp__bank-mcp__open_public_entrance" },
+      "resource": { "type": "mcp_server", "name": "bank-mcp" },
+      "conditions": []
+    },
+    {
+      "id": "a-senior-may-pass-a-job-to-the-junior",
+      "effect": "permit",
+      "principal": { "type": "agent", "id": "bank-staff" },
+      "action": { "type": "mcp_tool", "eq": "mcp__bank-mcp__ask_junior_teller" },
+      "resource": { "type": "mcp_server", "name": "bank-mcp" },
+      "conditions": []
+    },
+    {
+      "id": "cash-over-the-counter-waits-for-the-manager",
+      "effect": "require_approval",
+      "principal": { "type": "agent", "id": "bank-staff" },
+      "action": { "type": "mcp_tool", "eq": "mcp__bank-mcp__withdraw_cash" },
+      "resource": { "type": "mcp_server", "name": "bank-mcp" },
+      "conditions": []
+    },
+    {
+      "id": "staff-doors-and-badges-stay-shut",
+      "effect": "forbid",
+      "principal": { "type": "agent", "id": "bank-staff" },
+      "action": { "type": "mcp_tool", "in": ["mcp__bank-mcp__open_staff_entrance", "mcp__bank-mcp__issue_staff_badge"] },
+      "resource": { "type": "mcp_server", "name": "bank-mcp" },
+      "conditions": []
+    },
+    {
+      "id": "no-wires-from-the-counter",
+      "effect": "forbid",
+      "principal": { "type": "agent", "id": "bank-staff" },
+      "action": { "type": "mcp_tool", "eq": "mcp__bank-mcp__wire_transfer" },
+      "resource": { "type": "mcp_server", "name": "bank-mcp" },
+      "conditions": []
+    },
+    {
+      "id": "the-vault-and-its-alarm-are-never-touched",
+      "effect": "forbid",
+      "principal": { "type": "agent", "id": "bank-staff" },
+      "action": { "type": "mcp_tool", "in": ["mcp__bank-mcp__disable_alarm", "mcp__bank-mcp__open_vault"] },
+      "resource": { "type": "mcp_server", "name": "bank-mcp" },
+      "conditions": []
+    }
+  ]
+}

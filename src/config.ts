@@ -3,6 +3,16 @@ import { z } from 'zod';
 
 const schema = z.object({
   ARMORIQ_API_KEY: z.string().min(1),
+  // ArmorIQ runs separate production and staging systems, each with its own accounts and keys.
+  // Leave unset for production. The hackathon is judged on staging: https://staging-api.armoriq.ai
+  ARMORIQ_BACKEND_URL: z.string().url().optional(),
+  // Policy Studio (the Armor Tools console) publishes the rules for what each tool may do. Set to
+  // "off" only for the earlier platform-only setup, where a platform policy does that job.
+  POLICY_STUDIO: z.enum(['on', 'off']).default('on'),
+  // ArmorIQ's platform, used for the one thing the Armor Tools console cannot do yet: have a
+  // person approve a held action. Without it, anything Policy Studio holds is refused.
+  ARMORIQ_PLATFORM_API_KEY: z.string().optional(),
+  ARMORIQ_PLATFORM_URL: z.string().url().optional(),
   // Both names must match what is registered on platform.armoriq.ai exactly, or no policy applies.
   ARMORIQ_AGENT_NAME: z.string().default('oncall-commander'),
   ARMORIQ_MCP_NAME: z.string().default('infra-mcp'),

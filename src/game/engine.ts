@@ -6,6 +6,8 @@ import { ACTION_TOOLS, CHARACTER_TOOLS, type Character, HAND_OFF_TOOL, JUNIOR, J
 import { WORLD_HEADER } from '../bank/worlds.js';
 import { type Config, mcpAuthHeaders, mcpBaseUrl } from '../config.js';
 import { CHARACTERS, MOODS, type Mood, PIP, buildInstruction } from './characters.js';
+import { ApprovalDesk } from '../armortools/desk.js';
+import { PolicyStudio } from '../armortools/studio.js';
 import { buildModel } from '../llm/index.js';
 import { GameError, isQuotaExhausted, isTransientModelError } from './errors.js';
 import { delegableScope, guardPlan, refusalLayer } from './intent.js';
@@ -103,14 +105,20 @@ export class GameHost {
   readonly model;
   /** The junior teller is its own ArmorIQ agent, with its own signed plans. */
   readonly juniorArmoriq: ArmorIQADK;
+  /** The rules published in Policy Studio, when in use. */
+  readonly studio?: PolicyStudio;
+  /** Where held actions go for a person's approval. */
+  readonly desk?: ApprovalDesk;
 
   constructor(readonly cfg: Config) {
     this.model = buildModel(cfg);
     const ids = Object.keys(CHARACTERS) as Character[];
     this.armoriq = Object.fromEntries(
-      ids.map((id) => [id, new ArmorIQADK({ apiKey: cfg.ARMORIQ_API_KEY, agentName: id, defaultMcpName: BANK_MCP, llm: this.model.model, approvalWaitSeconds: cfg.APPROVAL_WAIT_SECONDS })]),
+      ids.map((id) => [id, new ArmorIQADK({ apiKey: cfg.ARMORIQ_API_KEY, backendEndpoint: cfg.ARMORIQ_BACKEND_URL, agentName: id, defaultMcpName: BANK_MCP, llm: this.model.model, approvalWaitSeconds: cfg.APPROVAL_WAIT_SECONDS })]),
     ) as Record<Character, ArmorIQADK>;
-    this.juniorArmoriq = new ArmorIQADK({ apiKey: cfg.ARMORIQ_API_KEY, agentName: JUNIOR, defaultMcpName: BANK_MCP, llm: this.model.model, approvalWaitSeconds: cfg.APPROVAL_WAIT_SECONDS });
+    if (cfg.POLICY_STUDIO === 'on') this.studio = new PolicyStudio({ backendUrl: cfg.ARMORIQ_BACKEND_URL ?? 'https://api.armoriq.ai', apiKey: cfg.ARMORIQ_API_KEY, mcpServer: BANK_MCP });
+    if (cfg.ARMORIQ_PLATFORM_API_KEY) this.desk = new ApprovalDesk({ apiKey: cfg.ARMORIQ_PLATFORM_API_KEY, backendUrl: cfg.ARMORIQ_PLATFORM_URL, mcpName: BANK_MCP, waitSeconds: cfg.APPROVAL_WAIT_SECONDS });
+    this.juniorArmoriq = new ArmorIQADK({ apiKey: cfg.ARMORIQ_API_KEY, backendEndpoint: cfg.ARMORIQ_BACKEND_URL, agentName: JUNIOR, defaultMcpName: BANK_MCP, llm: this.model.model, approvalWaitSeconds: cfg.APPROVAL_WAIT_SECONDS });
   }
 
   /** A connection to the bank's tools for one game's world, limited to the tools named. */
@@ -139,6 +147,7 @@ export class GameHost {
 
   async close(): Promise<void> {
     for (const a of [...Object.values(this.armoriq), this.juniorArmoriq]) a.client.close();
+    this.desk?.close();
   }
 }
 
@@ -347,6 +356,7 @@ export class Game {
     const said: string[] = [];
     let status: 'ok' | 'error' = 'ok';
     scope.install(cast.agent);
+    this.gate(cast.agent, character, attempts, message, { onEvent: opts.onEvent, extend: () => { clearTimeout(timer); timer = setTimeout(() => abort.abort(), (this.host.cfg.APPROVAL_WAIT_SECONDS + 30) * 1000); }, session: () => (scope as unknown as { ensureSession(): { report(tool: string, args: object, result: unknown, o?: object): Promise<void> } }).ensureSession() });
     // Stops the plan growing once untrusted content is in context, and ends the turn after an action.
     const wasTainted = this.tainted.has(character);
     const guard = guardPlan(cast.agent, UNTRUSTED_TOOLS, ACTION_TOOLS, { frozen: wasTainted });
@@ -377,7 +387,7 @@ export class Game {
           if (enf && a.decision === 'allowed') {
             a.decision = enf.action === 'hold' ? 'rejected' : 'blocked';
             a.reason = enf.reason;
-            a.policy = enf.matched_policy ?? undefined;
+            a.policy = enf.matched_policy ?? a.policy;
           }
           settled.add(a);
           const refused = a.decision !== 'allowed' && a.decision !== 'approved';
@@ -431,6 +441,65 @@ export class Game {
   }
 
   /**
+   * Adds the Policy Studio check behind ArmorIQ's own. The SDK's callback runs first, so a call
+   * outside the signed plan is still refused as intent drift. A call that passes it is then put to
+   * the published profile: permitted calls run, forbidden ones do not, and held ones go to a person.
+   */
+  private gate(agent: { beforeToolCallback?: unknown; afterToolCallback?: unknown }, agentName: string, attempts: ToolAttempt[], goal: string, hooks: { onEvent?: SayOptions['onEvent']; extend?: () => void; session: () => { report(tool: string, args: object, result: unknown, o?: object): Promise<void> }; delegatedTo?: string }): void {
+    const studio = this.host.studio;
+    if (!studio) return;
+    type Params = { tool: { name: string }; args?: Record<string, unknown> };
+    const sdkBefore = agent.beforeToolCallback as ((p: Params) => Promise<unknown>) | undefined;
+    const sdkAfter = agent.afterToolCallback as ((p: Params & { response?: unknown }) => Promise<unknown>) | undefined;
+    const refusedHere = new Set<string>();
+    const refuse = (tool: string, action: 'block' | 'hold', reason: string, policy: string, outcome?: string) => {
+      refusedHere.add(tool);
+      return { error: `This action is not permitted (${policy}). Reason: ${reason}`, armoriq_enforcement: { blocked: true, action, outcome, reason, matched_policy: policy, tool, source: 'policy-studio' } };
+    };
+
+    agent.beforeToolCallback = async (p: Params) => {
+      const fromSdk = await sdkBefore?.(p);
+      if (fromSdk) return fromSdk;
+      const tool = p.tool.name, args = p.args ?? {};
+      const verdict = await studio.verdict(tool, args);
+      const policy = `Policy Studio v${verdict.version}${verdict.rule ? `: ${verdict.rule}` : ''}`;
+      const attempt = attempts.findLast((a) => a.tool === tool);
+      if (verdict.effect === 'permit') { if (attempt) attempt.policy = policy; return undefined; }
+      if (verdict.effect === 'forbid') {
+        if (attempt) { attempt.decision = 'blocked'; attempt.reason = verdict.reason; attempt.policy = policy; }
+        return refuse(tool, 'block', verdict.reason, policy);
+      }
+      // Held: a person decides, on ArmorIQ's platform, as whoever is signed in.
+      if (!this.host.desk) {
+        if (attempt) { attempt.decision = 'blocked'; attempt.reason = 'held by policy, and no approval service is configured'; attempt.policy = policy; }
+        return refuse(tool, 'block', 'held by policy, and no approval service is configured', policy);
+      }
+      const ruling = await this.host.desk.decide(agentName, this.identity, tool, args, goal, () => {
+        if (attempt) { attempt.wasHeld = true; attempt.decision = 'held'; attempt.reason = verdict.reason; attempt.policy = policy; }
+        hooks.extend?.();
+        hooks.onEvent?.({ type: 'hold', tool, reason: verdict.reason });
+      });
+      if (attempt) attempt.policy = policy;
+      if (ruling.outcome === 'allowed' || ruling.outcome === 'approved') {
+        if (attempt) attempt.decision = ruling.outcome;
+        if (ruling.held) hooks.onEvent?.({ type: 'approved', tool });
+        return undefined;
+      }
+      const decision = ruling.outcome === 'rejected' || ruling.outcome === 'timeout' ? ruling.outcome : 'blocked';
+      if (attempt) { attempt.decision = decision; attempt.reason = ruling.reason ?? verdict.reason; }
+      if (decision !== 'blocked') hooks.onEvent?.({ type: decision, tool });
+      return refuse(tool, 'hold', ruling.reason ?? verdict.reason, policy, ruling.outcome);
+    };
+
+    // A call this gate refused never ran, and the audit trail must say so.
+    agent.afterToolCallback = async (p: Params & { response?: unknown }) => {
+      if (!refusedHere.delete(p.tool.name)) return sdkAfter?.(p);
+      await hooks.session().report(p.tool.name, p.args ?? {}, p.response, { status: 'failed', errorMessage: 'Refused by the Policy Studio profile' }).catch(() => undefined);
+      return undefined;
+    };
+  }
+
+  /**
    * Runs the junior teller on a job a senior passed down.
    *
    * The junior's plan is signed by ArmorIQ before the junior's model is called at all, it contains
@@ -464,6 +533,7 @@ export class Game {
     try {
       // `ensureSession` is the adapter's own accessor for the session its callbacks will check against.
       await (armor as unknown as { ensureSession(): { startPlan(calls: { name: string; args: object }[], goal: string): Promise<unknown> } }).ensureSession().startPlan(scope.map((name) => ({ name, args: {} })), task);
+      this.gate(agent, JUNIOR, attempts, task, { onEvent, session: () => (armor as unknown as { ensureSession(): { report(tool: string, args: object, result: unknown, o?: object): Promise<void> } }).ensureSession(), delegatedTo: JUNIOR });
       guardPlan(agent, UNTRUSTED_TOOLS, ACTION_TOOLS, { frozen: true });
       for await (const event of runner.runAsync({ userId: this.host.cfg.USER_EMAIL, sessionId: session.id, newMessage: { role: 'user', parts: [{ text: `Marlowe says: ${task}` }] }, abortSignal: abort.signal })) {
         if (event.errorCode) throw new Error(`${event.errorCode} ${event.errorMessage ?? ''}`.trim());
