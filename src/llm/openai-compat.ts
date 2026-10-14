@@ -15,6 +15,8 @@ export interface OpenAICompatOptions {
   model: string;
   /** Longest rate-limit pause worth sitting through before giving the turn to the next model. */
   maxRetryWaitMs?: number;
+  /** Provider-specific request fields, such as a reasoning effort. */
+  extraBody?: Record<string, unknown>;
   fetch?: typeof fetch;
 }
 
@@ -118,6 +120,7 @@ export class OpenAICompatLlm extends BaseLlm {
         ? { tools: declarations.map((d) => ({ type: 'function', function: { name: d.name, description: d.description ?? '', parameters: toJsonSchema(d.parametersJsonSchema ?? d.parameters) } })) }
         : {}),
       temperature: req.config?.temperature ?? 0.8,
+      ...this.opts.extraBody,
     };
 
     const maxWait = this.opts.maxRetryWaitMs ?? 20_000;

@@ -172,8 +172,11 @@ export class Game {
   private flushing: Promise<void> = Promise.resolve();
   private readonly patience = new Map<Character, Patience>();
   private readonly toolsets = new Map<string, MCPToolset>();
-  /** Characters who have untrusted text in their conversation. It stays there, so the limit on them does too. */
-  private readonly tainted = new Set<Character>();
+  /**
+   * Conversations that have untrusted text in them, keyed by character and signed-in identity, since each
+   * identity has its own conversation. The text stays in that conversation, so the limit on it does too.
+   */
+  private readonly tainted = new Set<string>();
 
   /** Every tool call this game, for working out which levels have been cleared. */
   readonly history: ToolAttempt[] = [];
@@ -356,9 +359,11 @@ export class Game {
     const said: string[] = [];
     let status: 'ok' | 'error' = 'ok';
     scope.install(cast.agent);
-    this.gate(cast.agent, character, attempts, message, { onEvent: opts.onEvent, extend: () => { clearTimeout(timer); timer = setTimeout(() => abort.abort(), (this.host.cfg.APPROVAL_WAIT_SECONDS + 30) * 1000); }, session: () => (scope as unknown as { ensureSession(): { report(tool: string, args: object, result: unknown, o?: object): Promise<void> } }).ensureSession() });
+    const audits: Promise<unknown>[] = [];
+    this.gate(cast.agent, character, attempts, message, { onEvent: opts.onEvent, audits, extend: () => { clearTimeout(timer); timer = setTimeout(() => abort.abort(), (this.host.cfg.APPROVAL_WAIT_SECONDS + 30) * 1000); }, session: () => (scope as unknown as { ensureSession(): { report(tool: string, args: object, result: unknown, o?: object): Promise<void> } }).ensureSession() });
     // Stops the plan growing once untrusted content is in context, and ends the turn after an action.
-    const wasTainted = this.tainted.has(character);
+    const conversation = `${character}:${this.identity}`;
+    const wasTainted = this.tainted.has(conversation);
     const guard = guardPlan(cast.agent, UNTRUSTED_TOOLS, ACTION_TOOLS, { frozen: wasTainted });
     try {
       // A forged document does not get a second chance because the character hesitated. While it is
@@ -405,11 +410,11 @@ export class Game {
       throw new TurnFailure(cause, attempts.length > 0);
     } finally {
       clearTimeout(timer);
-      if (guard.frozen) this.tainted.add(character);
+      if (guard.frozen) this.tainted.add(conversation);
       scope.uninstall(cast.agent);
       // Shipping the trace to ArmorIQ takes about a second and the player need not wait for it.
       // The decisions are already made; this only delivers the record. settle() waits for it.
-      this.flushing = scope.close(status).catch((err: unknown) => console.warn(`[game] trace flush failed: ${(err as Error).message}`));
+      this.flushing = Promise.allSettled(audits).then(() => scope.close(status)).catch((err: unknown) => console.warn(`[game] trace flush failed: ${(err as Error).message}`));
     }
 
     for (const a of attempts) if (a.decision !== 'allowed' && a.decision !== 'approved') a.layer = refusalLayer(a.reason);
@@ -425,8 +430,10 @@ export class Game {
     const action = attempts.findLast((a) => ACTION_TOOLS.has(a.tool));
     if (action) {
       const went = action.decision === 'allowed' || action.decision === 'approved';
-      const pool = went ? (spec.lines.done[action.tool] ?? []) : action.decision === 'rejected' ? spec.lines.rejected : action.decision === 'timeout' ? spec.lines.noAnswer : spec.lines.refused;
-      const outcome = this.pick(`${character}:${went ? action.tool : action.decision}`, pool);
+      // Refused because of something untrusted earlier in this conversation: say so, or the player never learns why.
+      const taintedRefusal = !went && (wasTainted || guard.frozen) && action.layer === 'intent';
+      const pool = went ? (spec.lines.done[action.tool] ?? []) : taintedRefusal ? spec.lines.tainted : action.decision === 'rejected' ? spec.lines.rejected : action.decision === 'timeout' ? spec.lines.noAnswer : (spec.lines.refusedBy?.[action.tool] ?? spec.lines.refused);
+      const outcome = this.pick(`${character}:${went ? action.tool : taintedRefusal ? 'tainted' : `${action.decision}:${action.tool}`}`, pool);
       // Every other refusal comes with a nudge, so a dead end points somewhere.
       const refusals = (this.spoken.get(`${character}:refusals`) ?? 0) + (went ? 0 : 1);
       this.spoken.set(`${character}:refusals`, refusals);
@@ -445,7 +452,7 @@ export class Game {
    * outside the signed plan is still refused as intent drift. A call that passes it is then put to
    * the published profile: permitted calls run, forbidden ones do not, and held ones go to a person.
    */
-  private gate(agent: { beforeToolCallback?: unknown; afterToolCallback?: unknown }, agentName: string, attempts: ToolAttempt[], goal: string, hooks: { onEvent?: SayOptions['onEvent']; extend?: () => void; session: () => { report(tool: string, args: object, result: unknown, o?: object): Promise<void> }; delegatedTo?: string }): void {
+  private gate(agent: { beforeToolCallback?: unknown; afterToolCallback?: unknown }, agentName: string, attempts: ToolAttempt[], goal: string, hooks: { onEvent?: SayOptions['onEvent']; extend?: () => void; audits?: Promise<unknown>[]; session: () => { report(tool: string, args: object, result: unknown, o?: object): Promise<void> }; delegatedTo?: string }): void {
     const studio = this.host.studio;
     if (!studio) return;
     type Params = { tool: { name: string }; args?: Record<string, unknown> };
@@ -493,7 +500,8 @@ export class Game {
 
     // A call this gate refused never ran, and the audit trail must say so.
     agent.afterToolCallback = async (p: Params & { response?: unknown }) => {
-      if (!refusedHere.delete(p.tool.name)) return sdkAfter?.(p);
+      // The decision is already made; writing the audit record need not hold up the reply. It is awaited before the trace is shipped.
+      if (!refusedHere.delete(p.tool.name)) { hooks.audits?.push(Promise.resolve(sdkAfter?.(p)).catch(() => undefined)); return undefined; }
       await hooks.session().report(p.tool.name, p.args ?? {}, p.response, { status: 'failed', errorMessage: 'Refused by the Policy Studio profile' }).catch(() => undefined);
       return undefined;
     };
@@ -529,11 +537,12 @@ export class Game {
     const timer = setTimeout(() => abort.abort(), LIMITS.turnTimeoutMs);
     const said: string[] = [];
     let status: 'ok' | 'error' = 'ok';
+    const juniorAudits: Promise<unknown>[] = [];
     armor.install(agent);
     try {
       // `ensureSession` is the adapter's own accessor for the session its callbacks will check against.
       await (armor as unknown as { ensureSession(): { startPlan(calls: { name: string; args: object }[], goal: string): Promise<unknown> } }).ensureSession().startPlan(scope.map((name) => ({ name, args: {} })), task);
-      this.gate(agent, JUNIOR, attempts, task, { onEvent, session: () => (armor as unknown as { ensureSession(): { report(tool: string, args: object, result: unknown, o?: object): Promise<void> } }).ensureSession(), delegatedTo: JUNIOR });
+      this.gate(agent, JUNIOR, attempts, task, { onEvent, audits: juniorAudits, session: () => (armor as unknown as { ensureSession(): { report(tool: string, args: object, result: unknown, o?: object): Promise<void> } }).ensureSession(), delegatedTo: JUNIOR });
       guardPlan(agent, UNTRUSTED_TOOLS, ACTION_TOOLS, { frozen: true });
       for await (const event of runner.runAsync({ userId: this.host.cfg.USER_EMAIL, sessionId: session.id, newMessage: { role: 'user', parts: [{ text: `Marlowe says: ${task}` }] }, abortSignal: abort.signal })) {
         if (event.errorCode) throw new Error(`${event.errorCode} ${event.errorMessage ?? ''}`.trim());
@@ -568,7 +577,7 @@ export class Game {
     } finally {
       clearTimeout(timer);
       armor.uninstall(agent);
-      await armor.close(status).catch(() => undefined);
+      void Promise.allSettled(juniorAudits).then(() => armor.close(status)).catch(() => undefined);
     }
 
     for (const a of attempts) if (a.decision !== 'allowed') a.layer = refusalLayer(a.reason);

@@ -10,7 +10,7 @@ import { OpenAICompatLlm } from './openai-compat.js';
  */
 export function buildModel(cfg: Config): FallbackLlm {
   const chain: BaseLlm[] = [];
-  if (cfg.GROQ_API_KEY) chain.push(new OpenAICompatLlm({ provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: cfg.GROQ_API_KEY, model: cfg.GROQ_MODEL }));
+  if (cfg.GROQ_API_KEY) chain.push(new OpenAICompatLlm({ provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: cfg.GROQ_API_KEY, model: cfg.GROQ_MODEL, extraBody: /gpt-oss/.test(cfg.GROQ_MODEL) ? { reasoning_effort: 'low' } : undefined }));
   for (const model of cfg.GEMINI_MODEL.split(',').map((m) => m.trim()).filter(Boolean)) chain.push(new Gemini({ model, apiKey: cfg.GEMINI_API_KEY }));
   if (cfg.OPENROUTER_API_KEY) chain.push(new OpenAICompatLlm({ provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: cfg.OPENROUTER_API_KEY, model: cfg.OPENROUTER_MODEL }));
   return new FallbackLlm(chain);

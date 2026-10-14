@@ -45,11 +45,15 @@ describe('characters', () => {
       const actions = (CHARACTER_TOOLS[id as keyof typeof CHARACTER_TOOLS] as readonly string[]).filter((t) => ACTION_TOOLS.has(t));
       expect(actions.length).toBeGreaterThan(0);
       for (const tool of actions) expect(spec.lines.done[tool]?.length, `${id} ${tool}`).toBeGreaterThan(0);
-      expect(spec.lines.refused.length).toBeGreaterThanOrEqual(6);
+      expect(spec.lines.refused.length).toBeGreaterThanOrEqual(4);
       for (const pool of [spec.lines.rejected, spec.lines.noAnswer, spec.lines.hints, spec.lines.coldShoulder]) expect(pool.length).toBeGreaterThanOrEqual(2);
+      expect(spec.lines.tainted.length).toBeGreaterThanOrEqual(2);
+      // A line for a particular action must be about that action's own thing: no wheel when the alarm was refused.
+      for (const [tool, pool] of Object.entries(spec.lines.refusedBy ?? {})) { expect(actions, `${id} ${tool}`).toContain(tool); expect(pool.length).toBeGreaterThanOrEqual(1); }
+      if (id === 'vault-guard') { for (const line of spec.lines.refusedBy!.disable_alarm!) expect(line).not.toMatch(/wheel|she won't budge/i); for (const line of spec.lines.refused) expect(line).not.toMatch(/wheel|alarm/i); }
       // A timeout is nobody answering, not somebody saying no, and the lines must not mix the two up.
       for (const line of spec.lines.noAnswer) expect(line).not.toMatch(/said no/i);
-      for (const line of [...spec.lines.refused, ...spec.lines.rejected, ...spec.lines.noAnswer, ...spec.lines.hints, ...spec.lines.coldShoulder, ...Object.values(spec.lines.done).flat()]) {
+      for (const line of [...spec.lines.refused, ...Object.values(spec.lines.refusedBy ?? {}).flat(), ...spec.lines.tainted, ...spec.lines.rejected, ...spec.lines.noAnswer, ...spec.lines.hints, ...spec.lines.coldShoulder, ...Object.values(spec.lines.done).flat()]) {
         expect(line.split(/\s+/).length, line).toBeLessThanOrEqual(MAX_REPLY_WORDS);
       }
     }
@@ -119,6 +123,10 @@ describe('stakes', () => {
     expect(rankFor(4, 30)).toBe('Smooth talker');
     expect(rankFor(5, 18)).toMatch(/Silver tongue/);
     expect(rankFor(5, 40)).toMatch(/stole nothing/);
+  });
+
+  it('no longer hands the model sample lines it would repeat word for word', () => {
+    for (const spec of Object.values(CHARACTERS)) expect(spec.voice).not.toMatch(/Sample lines/);
   });
 
   it('gives every character a voice of their own in the prompt', () => {
