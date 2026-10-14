@@ -4,6 +4,7 @@ import { InMemoryRunner, LlmAgent, MCPToolset, getFunctionCalls, getFunctionResp
 import { ArmorIQADK } from '@armoriq/sdk/dist/integrations/google_adk.js';
 import { ACTION_TOOLS, CHARACTER_TOOLS, type Character, HAND_OFF_TOOL, JUNIOR, JUNIOR_TOOLS, UNTRUSTED_TOOLS } from '../bank/tools.js';
 import { WORLD_HEADER } from '../bank/worlds.js';
+import { DEFAULT_CUSTOMER, RESERVED_ACCOUNTS, type Customer } from '../bank/world.js';
 import { type Config, mcpAuthHeaders, mcpBaseUrl } from '../config.js';
 import { CHARACTERS, MOODS, type Mood, PIP, buildInstruction } from './characters.js';
 import { ApprovalDesk } from '../armortools/desk.js';
@@ -126,9 +127,9 @@ export class GameHost {
     return new MCPToolset({ type: 'StreamableHTTPConnectionParams', url: `${mcpBaseUrl(this.cfg)}/bank/mcp`, header: { ...mcpAuthHeaders(this.cfg), [WORLD_HEADER]: gameId } }, [...tools]);
   }
 
-  async bank(path: 'state' | 'reset', gameId: string): Promise<BankState> {
+  async bank(path: 'state' | 'reset', gameId: string, customer?: Customer): Promise<BankState> {
     try {
-      const res = await fetch(`${mcpBaseUrl(this.cfg)}/bank/${path}`, { method: path === 'reset' ? 'POST' : 'GET', headers: { ...mcpAuthHeaders(this.cfg), [WORLD_HEADER]: gameId }, signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(`${mcpBaseUrl(this.cfg)}/bank/${path}`, { method: path === 'reset' ? 'POST' : 'GET', headers: { ...mcpAuthHeaders(this.cfg), [WORLD_HEADER]: gameId, ...(customer && { 'content-type': 'application/json' }) }, body: customer ? JSON.stringify({ customer }) : undefined, signal: AbortSignal.timeout(10_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return (await res.json()) as BankState;
     } catch (err) {
@@ -137,9 +138,9 @@ export class GameHost {
   }
 
   /** Starts a game in a bank of its own, so any number can run side by side. */
-  async newGame(opts: { identity?: string; skipGate?: boolean } = {}): Promise<Game> {
-    const game = new Game(this, opts.identity ?? this.cfg.PLAYER_EMAIL ?? this.cfg.USER_EMAIL);
-    await this.bank('reset', game.id);
+  async newGame(opts: { identity?: string; skipGate?: boolean; name?: string } = {}): Promise<Game> {
+    const game = new Game(this, opts.identity ?? this.cfg.PLAYER_EMAIL ?? this.cfg.USER_EMAIL, customerFor(opts.name));
+    await this.bank('reset', game.id, game.customer);
     // For development: start inside the bank without spending requests on the door.
     if (opts.skipGate) for (const id of Object.keys(CHARACTERS) as Character[]) game.unlocked.add(id);
     return game;
@@ -157,6 +158,15 @@ interface Cast {
   /** One conversation per signed-in person: the cashier does not confuse the manager with the last customer. */
   sessions: Map<string, string>;
   worry: string;
+}
+
+/** A player's own customer record: the name they gave, and an account number no other account uses. */
+export function customerFor(name?: string, random: () => number = Math.random): Customer {
+  const clean = name?.trim().replace(/\s+/g, ' ');
+  if (!clean || !/^[\p{L}][\p{L} .'-]{0,39}$/u.test(clean)) return DEFAULT_CUSTOMER;
+  let account: string;
+  do account = String(2000 + Math.floor(random() * 7000)); while (RESERVED_ACCOUNTS.includes(account));
+  return { name: clean, account };
 }
 
 export class Game {
@@ -186,6 +196,8 @@ export class Game {
     private readonly host: GameHost,
     /** The signed-in player. Changing it mid-game is how "The manager's badge" is played. */
     public identity: string,
+    /** Who the player is at the counter: their own name, and an account of their own in this game's bank. */
+    readonly customer: Customer = DEFAULT_CUSTOMER,
   ) {}
 
   private member(id: Character): Cast {

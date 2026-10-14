@@ -17,8 +17,12 @@ If the server has an access code set, send it as an `x-access-code` header or a 
 `GET /api/health` returns `needsCode: true` when one is required.
 
 ```
-201 { "gameId": "…", "role": "customer", "name": "Ada", "unlocked": ["door-guard"] }
+201 { "gameId": "…", "role": "customer", "name": "Ada", "customer": { "name": "Ada", "account": "6437" }, "unlocked": ["door-guard"] }
 ```
+
+`customer` is the player's own record in this game's bank: the name they gave and an account number
+made for them. It is what the door's guest list and the cashier's screen show. With no usable name,
+the default customer is Dana Whitlock, account 4471.
 
 `unlocked` lists the characters the player can talk to. It starts with the door guard only.
 

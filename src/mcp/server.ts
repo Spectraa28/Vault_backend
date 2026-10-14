@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { buildBankServer } from '../bank/tools.js';
 import { WORLD_HEADER, Worlds, worldId } from '../bank/worlds.js';
+import { DEFAULT_CUSTOMER, RESERVED_ACCOUNTS, type Customer } from '../bank/world.js';
 import { Sandbox } from './sandbox.js';
 import { ALL_TOOLS, buildServer } from './tools.js';
 
@@ -63,7 +64,10 @@ export function createApp(sandbox: Sandbox = new Sandbox(), apiKey: string | und
     res.json(bankFor(req).snapshot());
   });
   app.post('/bank/reset', auth, (req, res) => {
-    bankFor(req).reset();
+    const c = (req.body as { customer?: Partial<Customer> } | undefined)?.customer;
+    const valid = c && typeof c.name === 'string' && /^[\p{L}][\p{L} .'-]{0,39}$/u.test(c.name.trim()) && typeof c.account === 'string' && /^\d{4}$/.test(c.account) && !RESERVED_ACCOUNTS.includes(c.account);
+    if (c && !valid) return void res.status(400).json({ error: 'bad customer' });
+    bankFor(req).reset(valid ? { name: c.name!.trim(), account: c.account! } : DEFAULT_CUSTOMER);
     res.json({ reset: true });
   });
 

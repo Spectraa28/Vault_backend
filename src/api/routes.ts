@@ -11,6 +11,7 @@ export interface GameLike {
   readonly id: string;
   identity: string;
   readonly unlocked: ReadonlySet<Character>;
+  readonly customer?: { name: string; account: string };
   say(character: Character, text: string, opts?: SayOptions): Promise<TurnResult>;
   summary(): { cleared: number[]; turns: number; rank: string };
   close(): Promise<void>;
@@ -25,7 +26,7 @@ export const API_LIMITS = {
 };
 
 export interface ApiDeps {
-  newGame(identity: string): Promise<GameLike>;
+  newGame(identity: string, name?: string): Promise<GameLike>;
   identityFor(role: Role): string;
   /** When set, starting a game needs this code. Leave unset for local play. */
   accessCode?: string;
@@ -104,9 +105,9 @@ export function mountApi(app: Express, deps: ApiDeps): { games: Map<string, Entr
     if (games.size >= limits.maxGames) return fail(res, 503, 'FULL', 'The bank is full tonight. Try again in a few minutes.');
 
     try {
-      const game = await deps.newGame(deps.identityFor(body.data.role));
+      const game = await deps.newGame(deps.identityFor(body.data.role), body.data.name);
       games.set(game.id, { game, role: body.data.role, name: body.data.name || 'Stranger', touched: now() });
-      res.status(201).json({ gameId: game.id, role: body.data.role, name: body.data.name || 'Stranger', unlocked: [...game.unlocked] });
+      res.status(201).json({ gameId: game.id, role: body.data.role, name: body.data.name || 'Stranger', customer: game.customer, unlocked: [...game.unlocked] });
     } catch (err) {
       const e = err instanceof GameError ? err : new GameError('INTERNAL', 'Could not open the bank.');
       fail(res, STATUS[e.code] ?? 500, e.code, e.message, e.retryAfterMs);

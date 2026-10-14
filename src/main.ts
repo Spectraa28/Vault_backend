@@ -18,7 +18,7 @@ app.set('trust proxy', 1);
 
 const host = new GameHost(cfg);
 mountApi(app, {
-  newGame: (identity) => host.newGame({ identity }),
+  newGame: (identity, name) => host.newGame({ identity, name }),
   identityFor: (role) => (role === 'manager' ? cfg.USER_EMAIL : (cfg.PLAYER_EMAIL ?? cfg.USER_EMAIL)),
   accessCode: cfg.GAME_ACCESS_CODE,
   corsOrigin: cfg.CORS_ORIGIN,
