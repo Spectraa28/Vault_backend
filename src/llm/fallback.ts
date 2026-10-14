@@ -1,9 +1,13 @@
 import { BaseLlm, type BaseLlmConnection, type LlmRequest, type LlmResponse } from '@google/adk';
 
 const GIVE_UP_ON = /^(408|429|5\d\d)$/;
+/** A model that wrote a malformed or invented tool call: another model may well get it right. */
+const BAD_TOOL_CALL = /tool_use_failed|Failed to parse tool call|Tool call validation failed/i;
+const handOver = (res: LlmResponse) => GIVE_UP_ON.test(res.errorCode ?? '') || BAD_TOOL_CALL.test(String(res.errorMessage ?? ''));
 
 /**
- * Tries each model in order and moves on when one is rate-limited, out of quota or down.
+ * Tries each model in order and moves on when one is rate-limited, out of quota, down, or writes a
+ * tool call that cannot be parsed.
  *
  * It only falls through if the failing model produced nothing. The conversation history ADK
  * passes in is provider-neutral, so the next model picks up mid-conversation with full memory.
@@ -29,7 +33,7 @@ export class FallbackLlm extends BaseLlm {
         // ADK stamps the request with the chain's first model name. Each model must be asked for itself,
         // or a fallback is sent a name that belongs to another provider and can never answer.
         for await (const res of llm.generateContentAsync({ ...req, model: llm.model }, stream, abortSignal)) {
-          if (res.errorCode && !produced && !isLast && GIVE_UP_ON.test(res.errorCode)) {
+          if (res.errorCode && !produced && !isLast && handOver(res)) {
             failed = res;
             break;
           }

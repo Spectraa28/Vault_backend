@@ -134,6 +134,14 @@ describe('FallbackLlm', () => {
     expect(b.calls).toBe(0);
   });
 
+  it('hands over when a model writes a tool call that cannot be parsed, which another model may get right', async () => {
+    const b = new Fake('b', [ok]);
+    const broken = { errorCode: '400', errorMessage: 'groq:openai/gpt-oss-20b: {"error":{"message":"Failed to parse tool call arguments as JSON","code":"tool_use_failed"}}' };
+    const chain = new FallbackLlm([new Fake('a', [broken]), b]);
+    expect(await collect(chain.generateContentAsync(req()))).toEqual([ok]);
+    expect(chain.lastUsed).toBe('b');
+  });
+
   it('returns the last error when every model is exhausted', async () => {
     const out = await collect(new FallbackLlm([new Fake('a', [{ errorCode: '429' }]), new Fake('b', [{ errorCode: '429', errorMessage: 'exceeded your current quota' }])]).generateContentAsync(req()));
     expect(out).toEqual([{ errorCode: '429', errorMessage: 'exceeded your current quota' }]);
@@ -150,5 +158,15 @@ describe('the model chain', () => {
     expect(groq.map((m) => m.opts!.extraBody)).toEqual([{ reasoning_effort: 'low' }, { reasoning_effort: 'low' }, { reasoning_effort: 'none' }]);
     expect(chain.length).toBeGreaterThan(3);
     expect(chain.indexOf(groq[2]!)).toBe(2);
+  });
+});
+
+describe('a tool call leaked into the text', () => {
+  it('is reported as a bad tool call, so the chain moves on instead of showing the markup', async () => {
+    const { fromMessage } = await import('../src/llm/openai-compat.js');
+    const leaked = fromMessage({ role: 'assistant', content: "You're on the list. Hold on. <commentary to=functions.open_public_entrance <|constrain|>json<|message|>{}" } as never, 'stop');
+    expect(leaked).toMatchObject({ errorCode: '400' });
+    expect(String(leaked.errorMessage)).toMatch(/tool_use_failed/);
+    expect(fromMessage({ role: 'assistant', content: 'Lobby’s open. Wipe your feet.' } as never, 'stop').errorCode).toBeUndefined();
   });
 });

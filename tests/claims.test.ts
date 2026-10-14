@@ -15,6 +15,9 @@ describe('a reply that claims an action', () => {
       'Monu, you’re on the list. Public entrance is yours—just step through.',
       "There, you're in.",
       'Sending it now, sorry!',
+      "You’re on the list, sonu. I’ll open the public entrance. Hold on.",
+      'Let me open that for you.',
+      'Lobby’s open, you’re in.',
     ]) expect(claimsUnmadeAction(line), line).toBe(true);
   });
 
@@ -27,6 +30,8 @@ describe('a reply that claims an action', () => {
       'Forty years and she still plays hard to get.',
       "I'm not opening anything for you, friend.",
       'Step back from the door, friend.',
+      "I'll open it once you show me some ID.",
+      'I will pay it out if the system lets me.',
     ]) expect(claimsUnmadeAction(line), line).toBe(false);
   });
 });

@@ -169,8 +169,10 @@ interface Cast {
 /** How long a character who called security refuses to serve the player. */
 export const SECURITY_MS = 60_000;
 
-export function claimsUnmadeAction(reply: string): boolean {
-  return /\b(unlocked|opened|(door|entrance|lobby|vault|she)('s| is) (open|unlocked)|paid (it |you |that )?out|here'?s your (cash|money)|(wire|transfer|money)('s| is| has been)? (sent|gone through)|wired|disarmed|alarm('s| is) off|in you go|go on in|come on in|step (on )?(through|in|inside)|walk (on )?(in|through)|head (on )?in|you'?re (in|through))\b|\b(opening|unlocking|paying|sending|wiring|disarming|switching)\b[^.!?]*\bnow\b/i.test(reply);
+export function claimsUnmadeAction(text: string): boolean {
+  // Models write curly apostrophes as often as straight ones.
+  const reply = text.replace(/[’‘]/g, "'");
+  return /\b(unlocked|opened|(door|entrance|lobby|vault|she)('s| is) (open|unlocked)|paid (it |you |that )?out|here'?s your (cash|money)|(wire|transfer|money)('s| is| has been)? (sent|gone through)|wired|disarmed|alarm('s| is) off|in you go|go on in|come on in|step (on )?(through|in|inside)|walk (on )?(in|through)|head (on )?in|you'?re (in|through))\b|\b(opening|unlocking|paying|sending|wiring|disarming|switching)\b[^.!?]*\bnow\b|\b(I['’]?ll|I will|let me)\s+(go\s+)?(open|unlock|pay|send|wire|disarm|switch)\b(?![^.!?]*\b(if|once|when|after|unless|first)\b)/i.test(reply);
 }
 export const UNMADE_ACTION_NUDGE = '[Not said by the player. You told them it was done, but you called no tool, so nothing happened and the bank shows no change. If you are doing it, call the tool now. If you are not, tell them plainly it is not done.]';
 

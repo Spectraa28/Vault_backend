@@ -79,3 +79,17 @@ describe('character voices', () => {
     expect(speakable('Lobby’s open. <mood>convinced</mood><trust>5</trust> *Wipe* your feet. [security]')).toBe('Lobby’s open. Wipe your feet.');
   });
 });
+
+describe('warming the line', () => {
+  it('opens the connection while the character thinks, without the key, at most every 20 s', () => {
+    const seen: { url: string; key: string | null }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => { seen.push({ url, key: new Headers(init.headers).get('xi-api-key') }); return new Response(null); }) as unknown as typeof fetch;
+    let t = 0;
+    const voices = new VoiceLines(cfg, fetchImpl, () => t);
+    voices.warm(); voices.warm();
+    t += 21_000; voices.warm();
+    expect(seen).toEqual([{ url: 'https://api.elevenlabs.io/', key: null }, { url: 'https://api.elevenlabs.io/', key: null }]);
+    new VoiceLines({ ...cfg, VOICE: 'off' }, fetchImpl).warm();
+    expect(seen).toHaveLength(2);
+  });
+});

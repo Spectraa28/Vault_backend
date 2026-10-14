@@ -30,6 +30,7 @@ export const API_LIMITS = {
 export interface VoiceDeps {
   readonly enabled: boolean;
   start(character: string, text: string, mood?: TurnResult['mood']): string | undefined;
+  warm?(): void;
   pipe(id: string, res: Response): void;
 }
 
@@ -139,6 +140,7 @@ export function mountApi(app: Express, deps: ApiDeps): { games: Map<string, Entr
     const wait = turns.take();
     if (wait > 0) return fail(res, 429, 'RATE_LIMITED', 'The bank is busy. Give it a moment.', wait);
 
+    if (deps.voice?.enabled && body.data.voice !== false) deps.voice.warm?.();
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     const send = (e: ApiEvent) => res.write(`data: ${JSON.stringify(e)}\n\n`);
     // A held action can wait minutes for a person; comments keep proxies from closing the stream.

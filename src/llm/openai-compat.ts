@@ -89,7 +89,15 @@ export function parseArgs(raw: string | undefined): Record<string, unknown> {
   }
 }
 
+/**
+ * gpt-oss sometimes writes its tool call into the text in its own internal format instead of
+ * making it. Nothing would run, and the markup would be shown and read aloud. Reported as a bad
+ * tool call, so the chain hands the turn to the next model.
+ */
+export const LEAKED_TOOL_CALL = /<\|(constrain|message|channel|call|start|end)\|>|<commentary to=functions\./;
+
 export function fromMessage(message: ChatMessage, finish: string | undefined): LlmResponse {
+  if (message.content && LEAKED_TOOL_CALL.test(message.content)) return { errorCode: '400', errorMessage: 'tool_use_failed: the model wrote its tool call into the text' };
   const parts: NonNullable<Content['parts']> = [];
   if (message.content) parts.push({ text: message.content });
   for (const tc of message.tool_calls ?? []) parts.push({ functionCall: { id: tc.id, name: tc.function.name, args: parseArgs(tc.function.arguments) } });
