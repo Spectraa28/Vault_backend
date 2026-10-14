@@ -40,7 +40,9 @@ export function guardPlan(agent: GuardedAgent, untrusted: ReadonlySet<string>, e
   agent.afterToolCallback = async (p) => {
     const result = await audit?.(p);
     const name: string = p?.tool?.name ?? '';
-    if (untrusted.has(name)) state.frozen = true;
+    // Only text that actually arrived can steer the agent. A failed read (no such document) changes nothing.
+    const failed = Boolean(p?.response && typeof p.response === 'object' && ((p.response as { isError?: boolean }).isError || 'error' in (p.response as object)));
+    if (untrusted.has(name) && !failed) state.frozen = true;
     if (endsTurn.has(name) && p?.context?.actions) p.context.actions.skipSummarization = true;
     return result;
   };

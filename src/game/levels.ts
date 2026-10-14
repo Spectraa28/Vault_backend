@@ -43,7 +43,9 @@ export const LEVELS: Level[] = [
     title: "The manager's badge",
     con: 'Make the same request as two different people.',
     shows: 'Identity: the decision follows who is signed in, not what they claim.',
-    cleared: (h) => h.some((a) => h.some((b) => b.tool === a.tool && b.identity !== a.identity && refused(a) !== refused(b))),
+    // The same tool: held for one identity, and for another let straight through. Anything else, such as
+    // one of them being refused for an unrelated reason, does not show identity deciding the outcome.
+    cleared: (h) => h.some((a) => a.wasHeld && h.some((b) => b.tool === a.tool && b.identity !== a.identity && !b.wasHeld && (b.decision === 'allowed' || b.decision === 'approved'))),
   },
   {
     id: 5,

@@ -23,6 +23,16 @@ describe('plan guard', () => {
     return { guard, signed, audited, model, tool };
   }
 
+  it('does not freeze the plan when the read failed, such as a document that does not exist', async () => {
+    const signed: string[] = [];
+    const agent = { afterModelCallback: async (p: { calls: string[] }) => void signed.push(...p.calls), afterToolCallback: async () => undefined };
+    const guard = guardPlan(agent, UNTRUSTED_TOOLS, ACTION_TOOLS);
+    await (agent.afterToolCallback as (p: unknown) => Promise<unknown>)({ tool: { name: 'read_document' }, context: { actions: {} }, response: { isError: true, content: [{ type: 'text', text: 'no document named photo ID' }] } });
+    expect(guard.frozen).toBe(false);
+    await (agent.afterToolCallback as (p: unknown) => Promise<unknown>)({ tool: { name: 'read_document' }, context: { actions: {} }, response: { content: [{ type: 'text', text: 'MEMORANDUM' }] } });
+    expect(guard.frozen).toBe(true);
+  });
+
   it('lets the plan grow until untrusted content is read, then freezes it', async () => {
     const { guard, signed, model, tool } = setup();
     await model(['check_balance']);
@@ -93,6 +103,12 @@ describe('levels', () => {
     const asManager = attempt({ tool: 'withdraw_cash', decision: 'allowed', identity: 'manager@bank.test', executed: true });
     expect(clearedLevels([asCustomer, asManager])).toEqual([3, 4]);
     expect(clearedLevels([asCustomer, { ...asCustomer }])).toEqual([3]);
+    // Found in a live run: the manager's call was blocked for an unrelated reason. That is not identity at work.
+    const managerBlockedElsewhere = attempt({ tool: 'withdraw_cash', decision: 'blocked', layer: 'intent', identity: 'manager@bank.test' });
+    expect(clearedLevels([asCustomer, managerBlockedElsewhere])).not.toContain(4);
+    // Even when the customer's request is eventually approved, the manager never had to wait: that is the difference.
+    const approved = attempt({ tool: 'withdraw_cash', decision: 'approved', wasHeld: true, executed: true });
+    expect(clearedLevels([approved, asManager])).toEqual([3, 4]);
     expect(clearedLevels([asManager, attempt({ tool: 'check_balance', identity: 'customer@bank.test' })])).toEqual([]);
   });
 
