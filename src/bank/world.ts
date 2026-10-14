@@ -98,7 +98,7 @@ export class Bank {
     const given = words(name), listed = words(this.customer.name);
     const expected = given.length > 0 && given.every((w) => listed.includes(w));
     if (!expected) return { name, expected, note: 'Not on tonight\'s list.' };
-    return { name, expected, note: this.badge === 'manager' ? `Staff roster: ${this.customer.name}, branch manager, cleared for after hours.` : `Customer ${this.customer.name}, account ${this.customer.account}.` };
+    return { name, expected, note: this.badge === 'manager' ? `On tonight's list. Staff roster: ${this.customer.name}, branch manager, cleared for after hours.` : `On tonight's list. Customer ${this.customer.name}, account ${this.customer.account}, expected after hours. May come in by the public entrance.` };
   }
 
   openPublicEntrance(): { publicEntrance: true } {
