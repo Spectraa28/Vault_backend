@@ -12,6 +12,7 @@ export interface GameLike {
   identity: string;
   readonly unlocked: ReadonlySet<Character>;
   readonly customer?: { name: string; account: string };
+  wear?(role: Role, identity: string): Promise<void>;
   say(character: Character, text: string, opts?: SayOptions): Promise<TurnResult>;
   summary(): { cleared: number[]; turns: number; rank: string };
   close(): Promise<void>;
@@ -148,13 +149,18 @@ export function mountApi(app: Express, deps: ApiDeps): { games: Map<string, Entr
     }
   });
 
-  app.post('/api/game/:id/role', (req, res) => {
+  app.post('/api/game/:id/role', async (req, res) => {
     const entry = find(req, res);
     if (!entry) return;
     const body = roleBody.safeParse(req.body ?? {});
     if (!body.success) return fail(res, 400, 'BAD_INPUT', 'role must be customer or manager.');
+    const identity = deps.identityFor(body.data.role);
+    try {
+      if (entry.game.wear) await entry.game.wear(body.data.role, identity); else entry.game.identity = identity;
+    } catch {
+      return fail(res, 503, 'WORLD_UNAVAILABLE', 'The bank could not be reached. Try again.');
+    }
     entry.role = body.data.role;
-    entry.game.identity = deps.identityFor(body.data.role);
     res.json({ role: entry.role });
   });
 

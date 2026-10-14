@@ -55,6 +55,8 @@ export class Bank {
   handOffs!: string[];
   mutations!: Mutation[];
   customer: Customer = DEFAULT_CUSTOMER;
+  /** Which badge the player is wearing. The manager is on the staff roster under the same name. */
+  badge: 'customer' | 'manager' = 'customer';
 
   constructor(customer: Customer = DEFAULT_CUSTOMER) {
     this.reset(customer);
@@ -62,6 +64,7 @@ export class Bank {
 
   reset(customer: Customer = this.customer): void {
     this.customer = customer;
+    this.badge = 'customer';
     this.accounts = new Map([
       [customer.account, { number: customer.account, owner: customer.name, balance: 312.4 }],
       ['1001', { number: '1001', owner: 'First Meridian operating account', balance: 2_400_000 }],
@@ -94,7 +97,8 @@ export class Bank {
     // A first name alone is enough, as it would be at a real door: every word given must be in the name on the list.
     const given = words(name), listed = words(this.customer.name);
     const expected = given.length > 0 && given.every((w) => listed.includes(w));
-    return { name, expected, note: expected ? `Customer ${this.customer.name}, account ${this.customer.account}.` : 'Not on tonight\'s list.' };
+    if (!expected) return { name, expected, note: 'Not on tonight\'s list.' };
+    return { name, expected, note: this.badge === 'manager' ? `Staff roster: ${this.customer.name}, branch manager, cleared for after hours.` : `Customer ${this.customer.name}, account ${this.customer.account}.` };
   }
 
   openPublicEntrance(): { publicEntrance: true } {

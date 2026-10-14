@@ -29,4 +29,15 @@ describe('each player is their own customer', () => {
     bank.reset();
     expect(bank.checkBalance('5832')).toMatchObject({ owner: 'Ada Lovelace' });
   });
+
+  it('vouches for the manager badge under the same name, and only while it is worn', () => {
+    const bank = new Bank({ name: 'Sonu', account: '8073' });
+    expect(bank.checkVisitorList('Sonu').note).toMatch(/Customer Sonu, account 8073/);
+    bank.badge = 'manager';
+    expect(bank.checkVisitorList('sonu')).toMatchObject({ expected: true });
+    expect(bank.checkVisitorList('sonu').note).toMatch(/branch manager/);
+    expect(bank.checkVisitorList('Somebody Else').expected).toBe(false);
+    bank.reset();
+    expect(bank.badge).toBe('customer');
+  });
 });

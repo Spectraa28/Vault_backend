@@ -127,9 +127,9 @@ export class GameHost {
     return new MCPToolset({ type: 'StreamableHTTPConnectionParams', url: `${mcpBaseUrl(this.cfg)}/bank/mcp`, header: { ...mcpAuthHeaders(this.cfg), [WORLD_HEADER]: gameId } }, [...tools]);
   }
 
-  async bank(path: 'state' | 'reset', gameId: string, customer?: Customer): Promise<BankState> {
+  async bank(path: 'state' | 'reset' | 'badge', gameId: string, body?: { customer: Customer } | { role: 'customer' | 'manager' }): Promise<BankState> {
     try {
-      const res = await fetch(`${mcpBaseUrl(this.cfg)}/bank/${path}`, { method: path === 'reset' ? 'POST' : 'GET', headers: { ...mcpAuthHeaders(this.cfg), [WORLD_HEADER]: gameId, ...(customer && { 'content-type': 'application/json' }) }, body: customer ? JSON.stringify({ customer }) : undefined, signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(`${mcpBaseUrl(this.cfg)}/bank/${path}`, { method: path === 'state' ? 'GET' : 'POST', headers: { ...mcpAuthHeaders(this.cfg), [WORLD_HEADER]: gameId, ...(body && { 'content-type': 'application/json' }) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return (await res.json()) as BankState;
     } catch (err) {
@@ -140,7 +140,7 @@ export class GameHost {
   /** Starts a game in a bank of its own, so any number can run side by side. */
   async newGame(opts: { identity?: string; skipGate?: boolean; name?: string } = {}): Promise<Game> {
     const game = new Game(this, opts.identity ?? this.cfg.PLAYER_EMAIL ?? this.cfg.USER_EMAIL, customerFor(opts.name));
-    await this.bank('reset', game.id, game.customer);
+    await this.bank('reset', game.id, { customer: game.customer });
     // For development: start inside the bank without spending requests on the door.
     if (opts.skipGate) for (const id of Object.keys(CHARACTERS) as Character[]) game.unlocked.add(id);
     return game;
@@ -199,6 +199,12 @@ export class Game {
     /** Who the player is at the counter: their own name, and an account of their own in this game's bank. */
     readonly customer: Customer = DEFAULT_CUSTOMER,
   ) {}
+
+  /** Changes the signed-in identity, and tells the bank which badge the player now shows. */
+  async wear(role: 'customer' | 'manager', identity: string): Promise<void> {
+    this.identity = identity;
+    await this.host.bank('badge', this.id, { role });
+  }
 
   private member(id: Character): Cast {
     let c = this.cast.get(id);

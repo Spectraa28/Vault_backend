@@ -71,6 +71,13 @@ export function createApp(sandbox: Sandbox = new Sandbox(), apiKey: string | und
     res.json({ reset: true });
   });
 
+  app.post('/bank/badge', auth, (req, res) => {
+    const role = (req.body as { role?: string } | undefined)?.role;
+    if (role !== 'customer' && role !== 'manager') return void res.status(400).json({ error: 'bad role' });
+    bankFor(req).badge = role;
+    res.json({ badge: role });
+  });
+
   // Demo helpers: inspect what actually changed, and put the incident back.
   app.get('/state', auth, (_req, res) => {
     res.json(sandbox.snapshot());
