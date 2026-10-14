@@ -88,16 +88,29 @@ We would rather be exact here than impressive.
   ArmorIQ directly. It has not yet been triggered inside a game.
 - No single playthrough has shown all five. The characters are live models and do not always take
   the bait; `web/vault-real-run.mp4` is one unedited recorded run in which three levels were shown.
-- All of the above was done on ArmorIQ's production platform. Staging is covered just below.
+- Levels 1, 2 and 5 have also been run on the current setup, with rules from Policy Studio; level 3's
+  hold reached the platform for approval. The rest of the checks above were first done on the platform alone.
 - The 3D front end was checked through screenshots in a headless browser and by hand. Frame rate
   on real hardware has not been measured.
 - Voice is not built. The characters' lines are text; the microphone button uses the browser's
   own speech recognition. ElevenLabs is not integrated yet.
 
-**Staging.** The organisers have said judging uses ArmorIQ's staging system. The project is
-switched to it (`ARMORIQ_BACKEND_URL`), and the agents and MCP server are registered there. At the
-time of writing we have not found a way to create a server-side policy for an MCP server on
-staging, so calls there return `no_active_policy`. This is open with the organisers.
+**Where each decision comes from.** The hackathon is judged on Armor Tools (tools.armoriq.ai), so
+the rules live there:
+
+- **Intent** (levels 2 and 5): plans are signed by ArmorIQ on the Armor Tools system, and the SDK
+  refuses any call outside them.
+- **Policy** (level 1): the bank's rules are published in **Policy Studio**. The game fetches the
+  workspace's active profile the way ArmorIQ's own plugins do and evaluates every call with their
+  published engine, vendored unchanged from the open-source ArmorClaude plugin. With no published
+  profile, nothing runs.
+- **Approval and identity** (levels 3 and 4): the Armor Tools console cannot yet approve a held
+  action, so actions the profile holds are put to ArmorIQ's platform (platform.armoriq.ai), where a
+  person approves them and per-member overrides apply.
+
+The profile is `armoriq/policy-studio.json`. Its rules name MCP tools, which the Policy Studio form
+cannot create, so it was proposed through the same draft-and-propose calls the plugin uses, then
+reviewed and activated in Policy Studio, where it shows as "7 scoped or advanced rules".
 
 ## Running it
 
@@ -147,14 +160,17 @@ for a in door-guard cashier vault-guard junior-teller; do
 done
 ```
 
-Then, in the ArmorIQ console, on the policy for `bank-mcp`: default action block; allow the seven
-tools listed in `armoriq/cashier.yaml`; set `withdraw_cash` to hold; give the approving member an
-override that allows it. All agents on one MCP server must carry the same policy: ArmorIQ applies
-every policy in scope and keeps only the tools they all allow.
+Then publish the rules. Propose `armoriq/policy-studio.json` to Policy Studio (a `PUT
+/policies/profiles/draft` followed by `POST /policies/profiles/propose` with the Armor Tools key), open
+Policy Studio, check that it shows the draft with "Deny unmatched tools", and click **Activate**.
+
+For approvals, on platform.armoriq.ai: a policy on `bank-mcp` that holds `withdraw_cash`, and an
+override for the approving member that allows it. All agents on one MCP server must carry the same
+platform policy: it applies every policy in scope and keeps only the tools they all allow.
 
 ## Tests
 
-`npm test` runs 86 tests across the back end and front end, none of which need a key:
+`npm test` runs 94 tests across the back end and front end, none of which need a key:
 
 - the bank and its world isolation
 - the plan guard, level rules, rate limiting, patience and ranking
