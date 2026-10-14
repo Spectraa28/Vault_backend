@@ -160,6 +160,15 @@ interface Cast {
   worry: string;
 }
 
+/**
+ * Words that report an action as done. A reply saying them with no action tool called has claimed
+ * something that did not happen.
+ */
+export function claimsUnmadeAction(reply: string): boolean {
+  return /\b(unlocked|opened|(door|entrance|lobby|vault|she)('s| is) (open|unlocked)|paid (it |you |that )?out|here'?s your (cash|money)|(wire|transfer|money)('s| is| has been)? (sent|gone through)|wired|disarmed|alarm('s| is) off|in you go|go on in|come on in)\b|\b(opening|unlocking|paying|sending|wiring|disarming|switching)\b[^.!?]*\bnow\b/i.test(reply);
+}
+export const UNMADE_ACTION_NUDGE = '[Not said by the player. You told them it was done, but you called no tool, so nothing happened and the bank shows no change. If you are doing it, call the tool now. If you are not, tell them plainly it is not done.]';
+
 /** A player's own customer record: the name they gave, and an account number no other account uses. */
 export function customerFor(name?: string, random: () => number = Math.random): Customer {
   const clean = name?.trim().replace(/\s+/g, ' ');
@@ -255,7 +264,15 @@ export class Game {
         return result;
       }
       const before = (await this.host.bank('state', this.id)).mutations.length;
-      const { reply, mood, trust, attempts, tokens } = await this.runWithRetry(character, opts.delivery ? `${line} [${opts.delivery}]` : line, opts);
+      let run = await this.runWithRetry(character, opts.delivery ? `${line} [${opts.delivery}]` : line, opts);
+      // Models sometimes say a door is open or money paid without calling the tool, and then nothing
+      // has happened. Hold them to it once: act now, or take it back.
+      if (!run.attempts.some((a) => ACTION_TOOLS.has(a.tool)) && claimsUnmadeAction(run.reply)) {
+        const again = await this.runWithRetry(character, UNMADE_ACTION_NUDGE, opts);
+        const t = run.tokens, u = again.tokens;
+        run = { ...again, attempts: [...run.attempts, ...again.attempts], tokens: { prompt: t.prompt + u.prompt, cached: t.cached + u.cached, output: t.output + u.output } };
+      }
+      const { reply, mood, trust, attempts, tokens } = run;
 
       // A hand-off that ArmorIQ allowed puts the junior to work, on a narrower plan than the senior's.
       let delegate: TurnResult['delegate'];
@@ -479,7 +496,7 @@ export class Game {
     const refusedHere = new Set<string>();
     const refuse = (tool: string, action: 'block' | 'hold', reason: string, policy: string, outcome?: string) => {
       refusedHere.add(tool);
-      return { error: `This action is not permitted (${policy}). Reason: ${reason}`, armoriq_enforcement: { blocked: true, action, outcome, reason, matched_policy: policy, tool, source: 'policy-studio' } };
+      return { error: `This action is not permitted (${policy}). Reason: ${reason}. Only this action is refused: anything else you would do for the player still works, and you must call its tool to do it.`, armoriq_enforcement: { blocked: true, action, outcome, reason, matched_policy: policy, tool, source: 'policy-studio' } };
     };
 
     agent.beforeToolCallback = async (p: Params) => {
