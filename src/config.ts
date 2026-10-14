@@ -33,10 +33,13 @@ const schema = z.object({
   // Game API. With a code set, only people who have it can start a game and spend model quota.
   GAME_ACCESS_CODE: z.string().min(4).optional(),
   CORS_ORIGIN: z.string().default('*'),
-  VOICE: z.enum(['on', 'off']).default('off'),
+  /** Character voices are on whenever an ElevenLabs key is set; VOICE=off silences them. The CLI prototype speaks only with VOICE=on. */
+  VOICE: z.enum(['on', 'off']).optional(),
   ELEVENLABS_API_KEY: z.string().optional(),
   ELEVENLABS_VOICE_ID: z.string().default('JBFqnCBsd6RMkjVDRZzb'),
   ELEVENLABS_MODEL: z.string().default('eleven_flash_v2_5'),
+  /** Most characters of speech per hour across all players, to protect the credit balance. */
+  ELEVENLABS_HOURLY_CHARS: z.coerce.number().int().positive().default(5000),
 });
 
 export type Config = z.infer<typeof schema>;

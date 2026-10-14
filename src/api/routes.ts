@@ -26,7 +26,15 @@ export const API_LIMITS = {
   turnsPerMinute: 30,
 };
 
+/** Character voices: starts a line and serves its audio. */
+export interface VoiceDeps {
+  readonly enabled: boolean;
+  start(character: string, text: string, mood?: TurnResult['mood']): string | undefined;
+  pipe(id: string, res: Response): void;
+}
+
 export interface ApiDeps {
+  voice?: VoiceDeps;
   newGame(identity: string, name?: string): Promise<GameLike>;
   identityFor(role: Role): string;
   /** When set, starting a game needs this code. Leave unset for local play. */
@@ -38,7 +46,7 @@ export interface ApiDeps {
 
 const role = z.enum(['customer', 'manager']);
 const startBody = z.object({ role: role.default('customer'), name: z.string().trim().max(40).optional(), code: z.string().max(100).optional() });
-const sayBody = z.object({ character: z.enum(Object.keys(CHARACTER_TOOLS) as [Character, ...Character[]]), text: z.string().trim().min(1).max(1500) });
+const sayBody = z.object({ character: z.enum(Object.keys(CHARACTER_TOOLS) as [Character, ...Character[]]), text: z.string().trim().min(1).max(1500), /** False when the player has sound off: no credits are spent on a line nobody hears. */ voice: z.boolean().optional() });
 const roleBody = z.object({ role });
 
 const STATUS: Partial<Record<GameError['code'], number>> = { BAD_INPUT: 400, LOCKED: 409, BUSY: 409, RATE_LIMITED: 429, TURN_BUDGET: 409, TIMEOUT: 504, MODEL_UNAVAILABLE: 503, MODEL_QUOTA: 503, WORLD_UNAVAILABLE: 503 };
@@ -118,6 +126,11 @@ export function mountApi(app: Express, deps: ApiDeps): { games: Map<string, Entr
   });
 
   // One player line in, a stream of events out: each tool call, each ArmorIQ decision, then the reply.
+  app.get('/api/voice/:id', (req, res) => {
+    if (!deps.voice || !/^[\w-]{36}$/.test(String(req.params.id))) return void res.status(404).end();
+    deps.voice.pipe(String(req.params.id), res);
+  });
+
   app.post('/api/game/:id/say', async (req, res) => {
     const entry = find(req, res);
     if (!entry) return;
@@ -137,7 +150,11 @@ export function mountApi(app: Express, deps: ApiDeps): { games: Map<string, Entr
           if (out) send(out);
         },
       });
-      send(replyEvent(result));
+      // Speech starts now, before the reply is even sent, so the first audio is close behind the text.
+      const speak = deps.voice?.enabled && body.data.voice !== false;
+      const audio = speak ? deps.voice!.start(result.character, result.reply, result.mood) : undefined;
+      const delegateAudio = speak && result.delegate ? deps.voice!.start('junior-teller', result.delegate.reply) : undefined;
+      send(replyEvent(result, { audioUrl: audio && `/api/voice/${audio}`, delegateAudioUrl: delegateAudio && `/api/voice/${delegateAudio}` }));
     } catch (err) {
       if (err instanceof GameError) send({ type: 'error', code: err.code, message: err.message, retryAfterMs: err.retryAfterMs });
       else {

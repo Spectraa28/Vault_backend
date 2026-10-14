@@ -105,8 +105,9 @@ We would rather be exact here than impressive.
   hold reached the platform for approval. The rest of the checks above were first done on the platform alone.
 - The 3D front end was checked through screenshots in a headless browser and by hand. Frame rate
   on real hardware has not been measured.
-- Voice is not built. The characters' lines are text; the microphone button uses the browser's
-  own speech recognition. ElevenLabs is not integrated yet.
+- Character voices use ElevenLabs (below). They are covered by tests against a stand-in server;
+  latency against the real service has not been measured yet. The microphone button uses the
+  browser's own speech recognition.
 
 **Where each decision comes from.** The hackathon is judged on Armor Tools (tools.armoriq.ai), so
 the rules live there:
@@ -161,7 +162,22 @@ calls. It is labelled as a replay on every screen.
 | `PLAYER_EMAIL` | The player's identity: the "customer". Must differ from the approver, because ArmorIQ does not let a member decide their own held request. |
 | `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | Model providers, tried in that order. Any one is enough. |
 | `MCP_API_KEY` | Protects the bank MCP server when it is exposed publicly. |
+| `ELEVENLABS_API_KEY` | Optional. Character voices. Needs only the Text to Speech permission. |
 | `GAME_ACCESS_CODE` | Optional. When set, starting a game needs this code. |
+
+### Voices
+
+With `ELEVENLABS_API_KEY` set, every character speaks, each with a voice of their own from the
+ElevenLabs default library: Gus is Bill, Wren is Jessica, Marlowe is George and Pip is Liam
+(`src/voice/lines.ts`). A character's mood nudges their pace and steadiness.
+
+The path is built for the shortest gap between a line appearing and the character speaking. The
+server starts synthesis the moment the line is final, before the reply reaches the browser, on
+the streaming endpoint with the Flash model. The browser fetches `/api/voice/:id` and is sent
+whatever audio has already arrived, then the rest as it comes, so playback starts on the first
+chunk. The key never leaves the server. With sound off, the browser asks for no voice and nothing
+is spent; `ELEVENLABS_HOURLY_CHARS` caps spending across all players. A failure leaves the game in
+text.
 
 ### Deploying
 
@@ -194,7 +210,7 @@ platform policy: it applies every policy in scope and keeps only the tools they 
 
 ## Tests
 
-`npm test` runs 102 tests across the back end and front end, none of which need a key:
+`npm test` runs 122 tests across the back end and front end, none of which need a key:
 
 - the bank and its world isolation
 - the plan guard, level rules, rate limiting, patience and ranking

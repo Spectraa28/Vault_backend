@@ -31,3 +31,5 @@ services:
         sync: false
       - key: GAME_ACCESS_CODE
         sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false

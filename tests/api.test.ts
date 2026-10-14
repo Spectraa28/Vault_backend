@@ -74,6 +74,19 @@ describe('game API', () => {
     expect(made[1]!.badges).toEqual([]);
   });
 
+  it('starts the character speaking with the reply, and spends nothing when the player has sound off', async () => {
+    const started: string[] = [];
+    const voice = { enabled: true, start: (character: string, text: string) => { started.push(`${character}: ${text}`); return '00000000-0000-0000-0000-000000000001'; }, pipe: () => undefined };
+    const { post, stream } = start({ voice });
+    await post('/api/game', {});
+    const loud = (await stream('/api/game/game-1/say', { character: 'door-guard', text: 'Evening.' })).at(-1)!;
+    expect(loud).toMatchObject({ type: 'reply', audioUrl: '/api/voice/00000000-0000-0000-0000-000000000001' });
+    expect(started).toHaveLength(1);
+    const quiet = (await stream('/api/game/game-1/say', { character: 'door-guard', text: 'Evening.', voice: false })).at(-1)!;
+    expect(quiet).not.toHaveProperty('audioUrl');
+    expect(started).toHaveLength(1);
+  });
+
   it('streams tool, hold, decision and reply in order, without leaking identities', async () => {
     const { post, stream, made } = start();
     await post('/api/game', {});

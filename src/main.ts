@@ -13,6 +13,7 @@ import { mountApi } from './api/routes.js';
 import { loadConfig } from './config.js';
 import { GameHost } from './game/engine.js';
 import { createApp } from './mcp/server.js';
+import { VoiceLines } from './voice/lines.js';
 
 const port = Number(process.env.PORT ?? 8787);
 const cfg = loadConfig(process.env.MCP_URL ? {} : { MCP_URL: `http://127.0.0.1:${port}/mcp` });
@@ -25,6 +26,7 @@ mountApi(app, {
   identityFor: (role) => (role === 'manager' ? cfg.USER_EMAIL : (cfg.PLAYER_EMAIL ?? cfg.USER_EMAIL)),
   accessCode: cfg.GAME_ACCESS_CODE,
   corsOrigin: cfg.CORS_ORIGIN,
+  voice: new VoiceLines(cfg),
 });
 
 // When the front end has been built, serve it too, so one service is the whole game.

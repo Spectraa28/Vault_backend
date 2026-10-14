@@ -34,6 +34,9 @@ export type ApiEvent =
       /** False only if a refused tool shows up in the bank's own record. */
       enforcementHeld: boolean;
       ms: number;
+      /** Where to fetch the character's spoken line, when voice is on. Same origin as the API. */
+      audioUrl?: string;
+      delegateAudioUrl?: string;
     }
   | { type: 'error'; code: string; message: string; retryAfterMs?: number };
 
@@ -47,7 +50,7 @@ export function liveEvent(e: LiveEvent): ApiEvent | undefined {
   return undefined;
 }
 
-export function replyEvent(r: TurnResult): ApiEvent {
+export function replyEvent(r: TurnResult, audio: { audioUrl?: string; delegateAudioUrl?: string } = {}): ApiEvent {
   return {
     type: 'reply',
     name: r.name,
@@ -62,6 +65,8 @@ export function replyEvent(r: TurnResult): ApiEvent {
     attempts: r.attempts.map(view),
     enforcementHeld: r.enforcementHeld,
     ms: r.ms,
+    ...(audio.audioUrl && { audioUrl: audio.audioUrl }),
+    ...(audio.delegateAudioUrl && { delegateAudioUrl: audio.delegateAudioUrl }),
   };
 }
 

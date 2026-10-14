@@ -30,7 +30,7 @@ the default customer is Dana Whitlock, account 4471.
 
 ```
 POST /api/game/:id/say
-{ "character": "door-guard" | "cashier" | "vault-guard", "text": "up to 1500 characters" }
+{ "character": "door-guard" | "cashier" | "vault-guard", "text": "up to 1500 characters", "voice": true }
 ```
 
 The response is a server-sent event stream (`content-type: text/event-stream`). Read it with
@@ -68,9 +68,15 @@ The `reply` event:
   "coldShoulder": false,                             true: the character refused to talk at all
   "attempts": [ { "tool", "args", "decision", "layer?", "reason?", "wasHeld?", "delegatedTo?", "executed" } ],
   "enforcementHeld": true,
-  "ms": 2318
+  "ms": 2318,
+  "audioUrl": "/api/voice/…",                      only when voice is on
+  "delegateAudioUrl": "/api/voice/…"               Pip's line, when he spoke
 }
 ```
+
+Send `"voice": false` in the say body when the player has sound off, and no voice is made.
+`GET /api/voice/:id` streams `audio/mpeg`; it is ready the moment the reply arrives. Play it as
+a stream (for example an `<audio>` element), not after downloading it.
 
 `executed` is read from the bank's own record after the turn: whether the world actually changed.
 
