@@ -24,7 +24,8 @@ ws.addEventListener('message', (m) => {
 const send = (method, params = {}) => new Promise((res, rej) => { const n = ++id; pending.set(n, (d) => (d.error ? rej(new Error(d.error.message)) : res(d.result))); ws.send(JSON.stringify({ id: n, method, params })); });
 const evaluate = async (expression) => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result?.value;
 await send('Runtime.enable'); await send('Page.enable'); await send('Network.enable');
-await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+const [W, H] = (process.env.VIEWPORT ?? '1440x900').split('x').map(Number);
+await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: W < 800 });
 await send('Page.navigate', { url });
 for (const step of steps) {
   const i = step.indexOf(':'); const kind = step.slice(0, i); const arg = step.slice(i + 1);

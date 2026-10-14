@@ -6,3 +6,4 @@ dist
 .bin
 data
 *.tsbuildinfo
+frontend/verification
