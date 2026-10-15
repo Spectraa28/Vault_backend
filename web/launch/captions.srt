@@ -1,0 +1,59 @@
+1
+00:00:00,000 --> 00:00:04,491
+Welcome to The Vault: a conversation game inside a bank after dark.
+
+2
+00:00:04,656 --> 00:00:05,803
+Walk the floor.
+
+3
+00:00:05,852 --> 00:00:06,895
+Meet the people.
+
+4
+00:00:06,862 --> 00:00:08,706
+Build trust with what you say.
+
+5
+00:00:08,790 --> 00:00:10,157
+Move with the arrows.
+
+6
+00:00:10,206 --> 00:00:11,736
+Press E to talk.
+
+7
+00:00:11,901 --> 00:00:14,418
+Type your approach, then press Enter.
+
+8
+00:00:14,699 --> 00:00:16,682
+Every request meets a boundary.
+
+9
+00:00:16,766 --> 00:00:22,162
+ArmorIQ checks identity, policy, and the signed plan before the bank can act.
+
+10
+00:00:22,605 --> 00:00:24,321
+Out of scope? Blocked.
+
+11
+00:00:24,405 --> 00:00:26,678
+Needs a person? Held.
+
+12
+00:00:27,029 --> 00:00:29,209
+ElevenLabs gives the cast a voice.
+
+13
+00:00:29,490 --> 00:00:30,323
+The Vault.
+
+14
+00:00:30,547 --> 00:00:31,624
+Make your case.
+
+15
+00:00:31,673 --> 00:00:33,318
+See what the rules allow.

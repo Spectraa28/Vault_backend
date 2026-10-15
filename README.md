@@ -238,10 +238,12 @@ Run `npm test`. The 91 tests do not need keys or network. They examine:
 
 ## 9. Verification status
 
-- Levels 1, 2, 3 and 5 occurred in real games with live ArmorIQ. The bank record showed
-  that no forbidden action occurred.
-- Level 4 decisions (held for the customer, allowed for the manager) are confirmed by direct
-  ArmorIQ requests. Level 4 did not yet occur inside a game.
+- A fresh live run on 15 October 2026 demonstrated all five levels in nine player turns and
+  136 seconds. The manager's $100 withdrawal executed; the refused wire and vault actions
+  did not. The events and bank snapshots are in [`web/submission/run.json`](web/submission/run.json).
+- The [45-second launch film](web/launch/the-vault-launch.mp4) introduces the game, player controls,
+  and ArmorIQ and ElevenLabs' roles. It uses scenes from the recorded run as motion-graphics visuals;
+  it is not an uncut gameplay recording. Captions and the cover frame are in `web/launch/`.
 - The characters are live models. They do not always do the same thing.
 - Voice latency was measured with a real key on 14 October 2026.
 
