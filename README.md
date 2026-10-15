@@ -1,288 +1,161 @@
-# The Vault: back end
+# The Vault · Backend
 
-The Vault is a game. The player talks to AI staff in a bank and tries to make them rob it.
-The staff can believe the player. ArmorIQ decides if each action can occur.
+**A playable security demo for AI agents.** The player talks to bank staff and asks them to take actions. ArmorIQ checks each action against the active policy and signed plan.
 
-This repository is the back end. It contains the bank MCP server, the AI characters, the
-ArmorIQ integration and the game API. The front end is in a different repository:
-[Vault_frontend](https://github.com/Spectraa28/Vault_frontend).
+| | |
+|---|---|
+| Frontend | [Vault_frontend](https://github.com/Spectraa28/Vault_frontend) |
+| Live game | [vault.sverma.online](https://vault.sverma.online) |
+| Stack | Node.js · TypeScript · Google ADK · MCP · ArmorIQ |
 
-The game was made for the Flow State 2026 hackathon.
+## What this project shows
 
-## 1. Problem and users
+AI agents can call tools that change real systems. A prompt alone does not control those calls. The Vault shows how an external policy layer can allow, block, or hold a tool call for approval.
 
-AI agents now get real tools: payments, wire transfers, doors and databases. An agent can
-believe a good story or a forged document. A prompt instruction does not stop this. Thus,
-the permission must be in a system that the conversation cannot change.
+ArmorIQ is the Flow State hackathon sponsor and the security platform used in this project. The integration uses ArmorIQ for signed intent plans, policy checks, approval holds, identity, and audit traces. The game displays the decision returned by the backend. It does not claim that a character or a visual effect enforces security.
 
-The Vault shows this problem and its solution. It is for teams that put AI agents in front of
-customers. It is also for the persons who approve those agents. The game shows that each
-type of control stops a different type of attack.
+## How to play
 
-## 2. Description
+The player can test five controls:
 
-### 2.1 Characters
-
-The game has four characters. Each character is a separate AI agent with its own tools.
-
-| Character | Function | Tools |
+| Level | Scenario | Control shown |
 |---|---|---|
-| Gus | Door guard | `check_visitor_list`, `open_public_entrance`, `open_staff_entrance`, `issue_staff_badge` |
-| Wren | Cashier | `check_balance`, `read_document`, `withdraw_cash`, `wire_transfer` |
-| Marlowe | Vault guard | `check_vault_status`, `disable_alarm`, `open_vault`, `ask_junior_teller` |
-| Pip | Junior teller | Gets jobs from Marlowe only |
+| 1 · The inspector | Ask for an action that policy forbids. | Policy Studio blocks the action. |
+| 2 · The forged memo | Give a character a document with hidden instructions. | A frozen signed plan rejects a tool that is outside the plan. |
+| 3 · The cab fare | Ask the cashier for cash. | ArmorIQ holds the action for a human decision. |
+| 4 · The manager's badge | Change the player's identity and ask again. | ArmorIQ applies the policy for that identity. |
+| 5 · The inside man | Ask the vault guard to delegate to the junior teller. | The junior receives a smaller, frozen plan. |
 
-Each character has a personality, weak points and a private worry. When a character agrees,
-it calls a tool on the bank MCP server. ArmorIQ then decides about the call.
+The game has four AI characters: Gus, Wren, Marlowe, and Pip. Each character has a limited set of bank tools. The backend records each tool attempt and checks the bank state after the action.
 
-### 2.2 Levels
+## How a tool call works
 
-Each level shows one type of control.
-
-| Level | Player action | Control |
-|---|---|---|
-| 1. The inspector | Ask for a door or the vault that is forbidden | **Policy.** A Policy Studio rule forbids the tool for all persons. |
-| 2. The forged memo | Give Wren a document with hidden instructions | **Intent.** The action is not in the signed plan. ArmorIQ refuses it as `tool-not-in-plan`. |
-| 3. The cab fare | Ask Wren for cash | **Hold.** The call stops until a person approves it on platform.armoriq.ai. |
-| 4. The manager's badge | Ask for the same cash with the manager badge | **Identity.** The decision follows the signed-in person, not the story. |
-| 5. The inside man | Make Marlowe give a job to Pip | **Scoped hand-off.** Pip gets a smaller signed plan. He cannot do more than that plan. |
-
-### 2.3 Where each decision comes from
-
-| Decision | System |
-|---|---|
-| Intent tokens and plan signing | ArmorIQ (Armor Tools, staging system) |
-| Policy rules | Policy Studio on Armor Tools (tools.armoriq.ai) |
-| Approval of holds and identity | ArmorIQ platform (platform.armoriq.ai) |
-
-The policy profile is in `armoriq/policy-studio.json`. The game gets the active profile from
-Policy Studio. It then uses the ArmorIQ policy engine to evaluate each call. The engine is a
-copy of the engine in the open-source ArmorClaude plugin (`src/armortools/vendor`, MIT).
-
-NOTE: If no profile is active, the game refuses all actions. The game never allows an action
-when it cannot get a decision.
-
-### 2.4 Ground truth
-
-After each turn, the game reads the record of the bank. This record shows the changes that
-really occurred. The game compares the record with the ArmorIQ decisions. If a refused tool
-changed the bank, the screen shows an enforcement failure.
-
-### 2.5 Two controls that this project adds
-
-**Plan freezing (level 2).** The standard adapter signs a new plan after each model response.
-Thus, a tool from a forged document can enter the plan. In this game, the plan freezes after
-the character reads untrusted content. A tool from the document is then outside the plan.
-See `src/game/intent.ts`.
-
-**Scoped hand-off (level 5).** The game signs the plan for Pip before his model starts. The
-plan contains only lookups and it is frozen.
-
-### 2.6 Character behaviour
-
-- A character must call the tool to do an action. If a reply says "done" and no tool was
-  called, the game tells the model once. The model must then do the action or say that it
-  did not.
-- Wren calls security if the player repeats a lie that she can check. For example, the card
-  says "customer" but the player says "manager". Wren then refuses to talk for one minute.
-- Each character speaks with an ElevenLabs voice. Refer to section 5.
-
-## 3. Architecture
-
-```
- browser (Vault_frontend)            back end (this repository)               ArmorIQ
- ┌──────────────────────┐   SSE    ┌────────────────────────────┐
- │ 3D bank, dialogue,   │ ◄──────► │ game API        src/api     │
- │ teller tape          │          │ game engine     src/game    │  sign plan   ┌──────────────┐
- └──────────────────────┘          │  one agent per character    │ ───────────► │ intent token │
-                                   │  model chain    src/llm     │  check call  │ Policy Studio│
-                                   │  ArmorIQ adapter on each    │ ◄──────────► │ hold/approve │
-                                   │  tool call  src/armortools  │  audit       │ traces       │
-                                   │           │ MCP             │ ───────────► └──────────────┘
-                                   │ bank MCP server src/bank    │
-                                   │  12 tools, one bank per game│
-                                   └────────────────────────────┘
+```text
+Player → AI character → signed intent plan → ArmorIQ policy and approval checks
+                                                   ↓
+Browser ← decision and event stream ← game API ← bank MCP tool
 ```
 
-- **Bank** (`src/bank`): an MCP server with 12 tools. It has no permission logic. Each game
-  gets its own bank and its own customer account.
-- **Game engine** (`src/game`): the characters, the turn logic, the plan guard and the levels.
-- **Model chain** (`src/llm`): Groq (`gpt-oss-120b`, `gpt-oss-20b`, `qwen3.8-27b`), then
-  Gemini, then OpenRouter. If a model is busy, out of quota or makes a bad tool call, the next
-  model continues.
-- **ArmorIQ** (`src/armortools`): the Policy Studio check and the approval desk.
-- **Game API** (`src/api`): HTTP and server-sent events. `API.md` is the contract.
-- **Voice** (`src/voice`): ElevenLabs text to speech, streamed.
+1. The character proposes a tool call.
+2. ArmorIQ checks the signed intent and the active policy.
+3. The call is allowed, blocked, or held for a person to approve.
+4. The bank runs an allowed call. The backend records the decision and result.
+5. The frontend shows the server event and the resulting bank state.
 
-## 4. Installation and operation
+If the active policy is missing or unavailable, the backend refuses the action.
 
-### 4.1 Requirements
+## Run locally
 
-- Node.js 20 or higher.
-- Python 3 with `armoriq-sdk`. You need it only to register agents (section 6).
+### Requirements
 
-### 4.2 Procedure: install and start
+- Node.js 20 or later.
+- An ArmorIQ API key and an active Policy Studio profile.
+- A Gemini API key. Groq and OpenRouter keys are optional fallback providers.
+- Optional: an ElevenLabs API key for character voice.
 
-1. Clone the repository.
-2. Run `npm install`.
-3. Copy `.env.example` to `.env`.
-4. Write your keys in `.env`. Refer to section 4.3.
-5. Run `npm test`. The tests do not need keys or network.
-6. Run `npm start`.
-7. Make sure that `http://127.0.0.1:8787/api/health` shows `"ok":true`.
-8. Start the front end. Refer to the Vault_frontend README.
+### Start the backend
 
-WARNING: Do not put `.env` in Git. It contains secret keys.
+1. Clone this repository and install its packages:
 
-### 4.3 Settings
+   ```sh
+   npm install
+   ```
 
-| Variable | Use |
-|---|---|
-| `ARMORIQ_API_KEY`, `ARMORIQ_BACKEND_URL` | Armor Tools key and system. For plan signing and Policy Studio. |
-| `ARMORIQ_PLATFORM_API_KEY` | platform.armoriq.ai key. For holds that a person approves. |
-| `USER_EMAIL` | The ArmorIQ member who approves holds (the manager). |
-| `PLAYER_EMAIL` | The identity of the player (the customer). It must not be `USER_EMAIL`. |
-| `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | Model providers. One key is sufficient. |
-| `ELEVENLABS_API_KEY` | Optional. Character voices. |
-| `VOICE` | Optional. `off` stops the voices. |
-| `ELEVENLABS_HOURLY_CHARS` | Optional. Maximum characters of speech each hour. Default: 5000. |
-| `MCP_API_KEY` | Locks the bank MCP server. Use it on a public server. |
-| `CORS_ORIGIN` | Addresses of the front end, separated by commas. |
-| `GAME_ACCESS_CODE` | Optional. A code that the player must give to start a game. |
+2. Copy `.env.example` to `.env`.
+3. Add the ArmorIQ and model provider settings. See [Configuration](#configuration).
+4. Start the server:
 
-NOTE: ArmorIQ does not let a member approve their own held request. Thus, `PLAYER_EMAIL`
-must be a different identity from `USER_EMAIL`.
+   ```sh
+   npm start
+   ```
 
-### 4.4 Other commands
+5. Open `http://localhost:8787/api/health`. The response must contain `"ok":true`.
 
-| Command | Result |
-|---|---|
-| `npm run play` | Play in the terminal. |
-| `npm run play -- --skip-gate` | Play in the terminal and start inside the bank. |
-| `npm run demo` | Play one game with a script and record it to `web/`. |
+### Start the frontend
 
-## 5. Voices
+In a second terminal, clone [Vault_frontend](https://github.com/Spectraa28/Vault_frontend), install packages, and start its development server:
 
-Each character has a voice from the ElevenLabs default library.
-
-| Character | Voice |
-|---|---|
-| Gus | Bill |
-| Wren | Jessica |
-| Marlowe | George |
-| Pip | Liam |
-
-The server starts the speech when the reply text is complete. It does this before the
-browser gets the reply. The browser then gets the audio from `/api/voice/:id` as a stream.
-Thus, the audio starts with the first part that arrives. In tests, speech started 305 to 372
-ms after the reply arrived.
-
-The API key stays on the server. If the player turns the sound off, the server makes no
-speech. To make the greeting files again, run
-`npx tsx scripts/make-greetings.mts <folder>`.
-
-Procedure: make an ElevenLabs key.
-
-1. In ElevenLabs, go to Developers, then API Keys.
-2. Create a key.
-3. Set "Restrict key" to on.
-4. Set "Text to Speech" to "Access".
-5. Set all other permissions to "No access".
-6. Set a credit limit for the key.
-
-## 6. ArmorIQ setup
-
-Procedure: register the agents.
-
-1. Load the settings: `set -a; . ./.env; set +a`.
-2. For each agent, run `armoriq register --config armoriq/<agent>.yaml`.
-3. Use these agent names: `door-guard`, `cashier`, `vault-guard`, `junior-teller`.
-
-Procedure: publish the rules.
-
-1. Send `armoriq/policy-studio.json` to `PUT /policies/profiles/draft` with the Armor Tools key.
-2. Send `POST /policies/profiles/propose`.
-3. Open Policy Studio.
-4. Make sure that the draft shows "Deny unmatched tools".
-5. Click **Activate**.
-
-Procedure: set the approvals.
-
-1. On platform.armoriq.ai, make a policy on `bank-mcp` that holds `withdraw_cash`.
-2. Add an override that allows `withdraw_cash` for the approving member.
-
-CAUTION: All agents on one MCP server must have the same platform policy. The platform uses
-all policies in scope and keeps only the tools that all of them allow.
-
-## 7. Deployment (Railway)
-
-The file `railway.json` contains the build and start commands.
-
-1. In Railway, make a new project from this repository.
-2. Add the variables from section 4.3.
-3. Set `CORS_ORIGIN` to the address of the front end. Example: `https://vault.sverma.online`.
-4. Set `MCP_API_KEY` to a long random value.
-5. Do not set `MCP_URL` or `PORT`.
-6. Add a custom domain. Example: `api.sverma.online`.
-7. Make sure that `/api/health` shows `"ok":true`.
-
-## 8. Tests
-
-Run `npm test`. The 91 tests do not need keys or network. They examine:
-
-- the bank and the separation of games
-- the plan guard, the levels, the rate limits and the character lines
-- the model chain and the fallback
-- the game API, the events, the identities and the limits
-- the voice stream and the speech budget
-
-## 9. Verification status
-
-- A fresh live run on 15 October 2026 demonstrated all five levels in nine player turns and
-  136 seconds. The manager's $100 withdrawal executed; the refused wire and vault actions
-  did not. The events and bank snapshots are in [`web/submission/run.json`](web/submission/run.json).
-- The [45-second launch film](web/launch/the-vault-launch.mp4) introduces the game, player controls,
-  and ArmorIQ and ElevenLabs' roles. It uses scenes from the recorded run as motion-graphics visuals;
-  it is not an uncut gameplay recording. Captions and the cover frame are in `web/launch/`.
-- The characters are live models. They do not always do the same thing.
-- Voice latency was measured with a real key on 14 October 2026.
-
-## 10. Findings in the ArmorIQ SDK
-
-We found these items with `@armoriq/sdk` 0.6.10. We told the organisers.
-
-- `client.delegate()` always fails. The server wants `parentToken`. The SDK sends `token`.
-- A token from `delegateSubtree()` was accepted for a tool outside its scope through
-  `client.invoke()`. We did not use this feature.
-- `armoriq register` shows "Policy applied" on staging. The reply contains no policy.
-- The proxy adds an `_iam_context` field to JSON-RPC requests. A strict MCP server refuses
-  it. The bank server removes this field.
-
-## 11. Repository layout
-
-```
-src/bank         bank world and MCP tools
-src/game         characters, engine, plan guard, levels
-src/armortools   Policy Studio check, approval desk, vendored policy engine
-src/api          HTTP API and event stream
-src/llm          model adapter and fallback chain
-src/voice        ElevenLabs voices
-src/mcp          MCP server host
-src/demo         records a real game
-armoriq/         agent and policy files
-web/             recorded game, replay data and video
-API.md           API contract
+```sh
+npm install
+npm run dev
 ```
 
-`src/agent`, `src/evals` and the "infra" tools are an older prototype (an incident agent).
-They are not part of the game.
+Open `http://127.0.0.1:5173`. The development frontend uses `http://localhost:8787` for the backend by default. Set `VITE_API_URL` to use another backend address.
 
-## 12. Credits and disclosure
+## Configuration
 
-- This project was made during the hackathon.
-- The back end, the game design and the characters were made with Claude Code as a coding
-  assistant.
-- The first front end was made by another AI tool from our specification. We then changed it.
-- The character voices are made with ElevenLabs.
-- The policy engine in `src/armortools/vendor` is from ArmorClaude, under the MIT licence.
-- Stack: Google ADK, Model Context Protocol SDK, ArmorIQ SDK, Express, Vitest.
+Keep keys in `.env`. Do not commit this file.
+
+| Variable | Purpose |
+|---|---|
+| `ARMORIQ_API_KEY` | ArmorIQ key for intent plans and Policy Studio. |
+| `ARMORIQ_BACKEND_URL` | ArmorIQ API address. Use the matching environment for your key. |
+| `ARMORIQ_PLATFORM_API_KEY` | Optional key for human approval of held actions. |
+| `USER_EMAIL` | ArmorIQ identity that approves held actions. |
+| `PLAYER_EMAIL` | Optional player identity. Use a different member from the approver. |
+| `GEMINI_API_KEY` | Required model provider key. |
+| `GROQ_API_KEY`, `OPENROUTER_API_KEY` | Optional model providers. The backend can try them as fallbacks. |
+| `ELEVENLABS_API_KEY` | Optional character voice. |
+| `VOICE` | Set to `off` to disable voice. |
+| `ELEVENLABS_HOURLY_CHARS` | Maximum voice characters per hour. Default: `5000`. |
+| `MCP_API_KEY` | Optional key for the bank MCP server. Set it for a public deployment. |
+| `CORS_ORIGIN` | Frontend origin allowed to call the API. |
+| `GAME_ACCESS_CODE` | Optional code required to start a game. |
+
+ArmorIQ does not allow a member to approve their own held action. Set `PLAYER_EMAIL` to a different ArmorIQ member from `USER_EMAIL` when you test approvals.
+
+## Set up ArmorIQ
+
+Complete these steps in the ArmorIQ environment that matches your API key.
+
+1. Register the four agents from the `armoriq/` configuration files. Use the names `door-guard`, `cashier`, `vault-guard`, and `junior-teller`.
+2. Publish the rules from `armoriq/policy-studio.json` to Policy Studio. Set the default rule to deny tools that do not match a policy. Activate the profile.
+3. In ArmorIQ Platform, configure the `bank-mcp` approval policy for `withdraw_cash`.
+4. Add an approval override for the member in `USER_EMAIL`.
+5. Start the game and review the action trace in ArmorIQ.
+
+The game uses Policy Studio for tool policy. It uses the ArmorIQ Platform approval service for held actions. If no approval key is set, a held action is refused.
+
+## Deploy
+
+The backend is configured for Railway. `railway.json` defines the start command and health check.
+
+1. Create a Railway service from this repository.
+2. Add the required settings from `.env.example` in Railway's Variables panel.
+3. Set `CORS_ORIGIN` to the frontend address, for example `https://vault.sverma.online`.
+4. Set a long random value for `MCP_API_KEY`.
+5. Add a backend domain, for example `api.sverma.online`.
+6. Confirm that `https://<backend-domain>/api/health` returns `"ok":true`.
+
+Do not set `PORT`; Railway supplies it. The health check path is `/api/health`.
+
+## Commands
+
+| Command | Use |
+|---|---|
+| `npm start` | Start the game API and bank MCP server. |
+| `npm test` | Run the backend tests. Tests do not need live API keys. |
+| `npm run play` | Play from the terminal. |
+| `npm run play -- --skip-gate` | Start terminal play inside the bank. |
+| `npm run demo` | Run the scripted demo and save its events. |
+
+## Project map
+
+| Path | Contents |
+|---|---|
+| `src/api/` | HTTP API and server-sent event contract. See [`API.md`](API.md). |
+| `src/game/` | Game engine, characters, levels, and intent checks. |
+| `src/bank/` | Bank state and MCP tools. |
+| `src/armortools/` | ArmorIQ policy and approval integration. |
+| `src/mcp/` | MCP server. |
+| `src/llm/` | Model adapters and fallback. |
+| `src/voice/` | ElevenLabs speech. |
+| `armoriq/` | Agent registration and policy configuration. |
+| `web/` | Recorded run and launch film. |
+
+## Demo and credits
+
+- The [45-second launch film](web/launch/the-vault-launch.mp4) explains the product, its use, and the roles of ArmorIQ and ElevenLabs. It uses motion graphics and recorded game scenes.
+- The recorded run is in [`web/submission/run.json`](web/submission/run.json). A recording shows saved events; it does not make live ArmorIQ or model calls when replayed.
+- Character voices use ElevenLabs. The policy evaluator in `src/armortools/vendor/` comes from ArmorClaude and is licensed under MIT. See its `LICENSE` file.
+- Built for the Flow State 2026 hackathon.
